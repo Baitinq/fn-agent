@@ -49,10 +49,10 @@ func (s *fnUI) render(width int, viewportHeight ...int) ([]string, int, int) {
 			seconds := int((remaining + time.Second - 1) / time.Second)
 			status := fmt.Sprintf(" Retrying (%d/%d) in %ds... (Esc to cancel)", s.retryAttempt, s.retryMaxAttempts, seconds)
 			status += workingDurationLabel(s.requestStartedAt, time.Now())
-			lines = append(lines, ansiRGBStyle(piAmber, "", false, false, spinnerFrames[s.spinnerFrame])+ansi256FG(242, status))
+			lines = append(lines, ansiRGBStyle(piAmber, "", false, false, spinnerFrames[s.spinnerFrame])+ansi256FG(242, truncateCells(status, width-lineWidth(spinnerFrames[s.spinnerFrame]))))
 		} else {
 			status := " Working…" + workingDurationLabel(s.requestStartedAt, time.Now())
-			lines = append(lines, ansiRGBStyle(piAccent, "", false, false, spinnerFrames[s.spinnerFrame])+ansi256FG(242, status))
+			lines = append(lines, ansiRGBStyle(piAccent, "", false, false, spinnerFrames[s.spinnerFrame])+ansi256FG(242, truncateCells(status, width-lineWidth(spinnerFrames[s.spinnerFrame]))))
 		}
 	}
 	for _, p := range s.pendingInputs {
@@ -83,7 +83,7 @@ func (s *fnUI) renderUndoSelector(width, height int) ([]string, int, int) {
 	start := max(0, s.undoSelected-visible/2)
 	start = min(start, max(0, len(s.undoOptions)-visible))
 	end := min(len(s.undoOptions), start+visible)
-	lines := []string{ansiRGBStyle(piBlue, "", false, false, " Select a turn to undo to"), ""}
+	lines := []string{ansiRGBStyle(piBlue, "", false, false, truncateCells(" Select a turn to undo to", width)), ""}
 	for i := start; i < end; i++ {
 		prefix, color := "  ", piGray
 		if i == s.undoSelected {
@@ -144,7 +144,7 @@ func renderedMessageAt(msg message, width int, now time.Time) string {
 			lines = append(lines, " "+ansi256FG(242, line))
 		}
 	case "status":
-		for _, line := range wrapPlain(msg.text, contentWidth) {
+		for _, line := range wrapPlain(msg.text, width-3) {
 			lines = append(lines, " "+ansiRGBStyle(piGreen, "", false, false, "✓")+ansi256FG(242, " "+line))
 		}
 	case "error":

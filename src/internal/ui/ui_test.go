@@ -656,6 +656,34 @@ func TestStreamingToolOutputBufferIsBounded(t *testing.T) {
 	}
 }
 
+func TestRenderFitsNarrowTerminal(t *testing.T) {
+	for _, mode := range []string{"status", "working", "retry", "undo"} {
+		for _, width := range []int{10, 20, 50, 80} {
+			t.Run(fmt.Sprintf("%s/%d", mode, width), func(t *testing.T) {
+				s, _ := newState(nil)
+				s.requestStartedAt = time.Now().Add(-time.Hour)
+				s.responding = mode == "working" || mode == "retry"
+				if mode == "status" {
+					s.messages = []message{{role: "status", text: strings.Repeat("x", width)}}
+				}
+				if mode == "retry" {
+					s.retryAttempt = 1
+					s.retryMaxAttempts = 3
+					s.retryDeadline = time.Now().Add(time.Minute)
+				}
+				if mode == "undo" {
+					s.undoOptions = []undoOption{{text: "previous prompt"}}
+				}
+				lines, cursorRow, cursorCol := s.render(width)
+				r := newMainScreenRenderer(io.Discard, width, 10)
+				if err := r.render(lines, cursorRow, cursorCol); err != nil {
+					t.Fatal(err)
+				}
+			})
+		}
+	}
+}
+
 func TestWorkingDurationFormatsElapsedRequestTime(t *testing.T) {
 	started := time.Date(2026, 8, 24, 0, 0, 0, 0, time.UTC)
 	for _, test := range []struct {
