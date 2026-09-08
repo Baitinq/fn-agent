@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -241,5 +242,35 @@ func TestPythonREPLLateHostResponseAfterRecovery(t *testing.T) {
 	output, failed, err := r.execute(t.Context(), `await llm("new")`)
 	if err != nil || failed || output != "'new'" {
 		t.Fatalf("new host response = %q, failed=%v, error=%v", output, failed, err)
+	}
+}
+
+func TestPythonREPLInterruptRecoveryNotice(t *testing.T) {
+	for _, checkpoint := range []bool{false, true} {
+		t.Run(fmt.Sprint(checkpoint), func(t *testing.T) {
+			var r *pythonREPL
+			want := "REPL unresponsive; restarted from last checkpoint. Changes from the interrupted call may be lost."
+			if checkpoint {
+				r = checkpointedREPL(t)
+			} else {
+				r = newPythonREPL(nil)
+				t.Cleanup(r.close)
+				want = "REPL unresponsive; restarted with variables cleared (no checkpoint available)."
+			}
+			r.stop()
+			r.recover(errors.Join(context.Canceled, errREPLInterruptTimeout))
+			notices := r.takeNotices()
+			if len(notices) != 1 || notices[0] != want {
+				t.Fatalf("recovery notices = %q, want %q", notices, want)
+			}
+		})
+	}
+}
+
+func TestFormatREPLCancellation(t *testing.T) {
+	for _, err := range []error{context.Canceled, errors.Join(context.Canceled, errREPLInterruptTimeout)} {
+		if got := formatREPLError(err); got != "" {
+			t.Fatalf("formatREPLError(%v) = %q", err, got)
+		}
 	}
 }

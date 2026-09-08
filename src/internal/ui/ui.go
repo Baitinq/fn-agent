@@ -2,6 +2,7 @@ package ui
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -288,7 +289,7 @@ func (s *fnUI) spin(ctx context.Context, finished <-chan struct{}, id int) {
 func (s *fnUI) handleToolEvent(id int, ev toolEvent) {
 	// Recovery remains relevant after the originating turn was cancelled.
 	if ev.Kind == toolEventREPLRecovery {
-		s.addMessage(message{role: "status", text: "⚠ " + ev.Detail})
+		s.addMessage(message{role: "system", text: "⚠ " + ev.Detail})
 		return
 	}
 	if id != s.nextRequestID || !s.responding {
@@ -510,7 +511,9 @@ func (s *fnUI) finishResponse(resp response) {
 	if resp.Err == nil {
 		s.contextTokens = resp.ContextTokens
 	}
-	if resp.Err != nil {
+	if errors.Is(resp.Err, context.Canceled) {
+		s.addMessage(message{role: "system", text: "Canceled"})
+	} else if resp.Err != nil {
 		s.addMessage(message{role: "error", text: resp.Err.Error()})
 	}
 	if !hadStreamingText && resp.Text != "" {
@@ -590,11 +593,11 @@ func (s *fnUI) cancelRequest() {
 			s.messages[i].toolState = "error"
 			s.messages[i].toolFinishedAt = time.Now()
 			if s.messages[i].toolResult == "" {
-				s.messages[i].toolResult = "Cancelled."
+				s.messages[i].toolResult = "Canceled"
 			}
 		}
 	}
-	s.addMessage(message{role: "system", text: "Cancelled."})
+	s.addMessage(message{role: "system", text: "Canceled"})
 	s.markDirty()
 }
 

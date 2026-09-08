@@ -473,15 +473,15 @@ func TestCtrlCCancelsThenExitsOnSecondPress(t *testing.T) {
 	if ctx.Err() == nil || s.responding || s.cancel != nil {
 		t.Fatalf("request was not cancelled: %#v", s)
 	}
-	if len(s.messages) != 2 || s.messages[1].text != "Cancelled." {
+	if len(s.messages) != 2 || s.messages[1].text != "Canceled" {
 		t.Fatalf("cancellation message missing: %#v", s.messages)
 	}
-	if s.messages[0].toolState != "error" || s.messages[0].toolResult != "Cancelled." {
+	if s.messages[0].toolState != "error" || s.messages[0].toolResult != "Canceled" {
 		t.Fatalf("pending tool was not marked cancelled: %#v", s.messages[0])
 	}
 	after, _, _ := s.render(60)
 	rendered := stripANSI(strings.Join(after, "\n"))
-	if strings.Contains(rendered, "Running...") || !strings.Contains(rendered, "Cancelled.") {
+	if strings.Contains(rendered, "Running...") || !strings.Contains(rendered, "Canceled") {
 		t.Fatalf("cancelled tool retained stale rendered content:\n%s", rendered)
 	}
 	if keepRunning := s.handleKey(ctrlC); keepRunning {
@@ -555,7 +555,7 @@ func TestCancelIgnoresStaleResponse(t *testing.T) {
 	if ctx.Err() == nil || s.responding || s.cancel != nil {
 		t.Fatalf("request was not cancelled: %#v", s)
 	}
-	if len(s.messages) != 1 || s.messages[0].text != "Cancelled." {
+	if len(s.messages) != 1 || s.messages[0].text != "Canceled" {
 		t.Fatalf("cancellation message missing: %#v", s.messages)
 	}
 	s.finishResponse(response{id: 3, Text: "stale"})
@@ -1246,7 +1246,7 @@ func TestRetryShowsPiStyleCountdownAndEscapeCancels(t *testing.T) {
 	default:
 		t.Fatal("Escape did not cancel the request context")
 	}
-	if got := s.messages[len(s.messages)-1]; got.role != "system" || got.text != "Cancelled." {
+	if got := s.messages[len(s.messages)-1]; got.role != "system" || got.text != "Canceled" {
 		t.Fatalf("cancellation message = %#v", got)
 	}
 }
@@ -1505,9 +1505,22 @@ func TestREPLRecoveryNoticeIsRetained(t *testing.T) {
 			}
 			s.handleToolEvent(1, toolEvent{Kind: toolEventREPLRecovery, Detail: "Python REPL restarted from last checkpoint"})
 			notice := s.messages[len(s.messages)-1]
-			if notice.role != "status" || !strings.Contains(notice.text, "restarted from last checkpoint") {
+			if notice.role != "system" || !strings.Contains(notice.text, "restarted from last checkpoint") {
 				t.Fatalf("recovery notice missing: %#v", s.messages)
 			}
 		})
+	}
+}
+
+func TestCanceledResponseMessage(t *testing.T) {
+	for _, err := range []error{context.Canceled, fmt.Errorf("interrupted: %w", context.Canceled)} {
+		s, _ := newState(nil)
+		s.responding = true
+		s.nextRequestID = 1
+		s.finishResponse(response{id: 1, Err: err})
+		msg := s.messages[len(s.messages)-1]
+		if msg.role != "system" || msg.text != "Canceled" {
+			t.Fatalf("cancellation message = %#v", msg)
+		}
 	}
 }

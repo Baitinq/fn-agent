@@ -148,8 +148,8 @@ wait_for 'WAITING-FOR-CANCEL'
 "${tmux[@]}" send-keys -t "$session" Enter
 "${tmux[@]}" send-keys -t "$session" -l draft-after-cancel
 "${tmux[@]}" send-keys -t "$session" C-c
-wait_for 'Cancelled.'
-wait_for 'Python REPL restarted from last checkpoint'
+wait_for 'Canceled'
+wait_for 'REPL unresponsive; restarted from last checkpoint'
 visible=$("${tmux[@]}" capture-pane -p -t "$session")
 grep -q '│ queued-after-cancel' <<<"$visible"
 grep -q '│ steer-after-cancel' <<<"$visible"
@@ -169,7 +169,7 @@ sleep .2
 all=$(capture)
 [[ $(grep -c 'STREAM-LINE-01' <<<"$all") -eq 3 ]]
 [[ $(grep -c 'STREAM-LINE-32' <<<"$all") -eq 3 ]]
-grep -q 'Cancelled.' <<<"$all"
+grep -q 'Canceled' <<<"$all"
 "${tmux[@]}" resize-window -t "$session" -x 72 -y 24
 sleep .2
 

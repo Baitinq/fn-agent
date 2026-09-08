@@ -131,7 +131,15 @@ func (r *pythonREPL) start() error {
 		if r.checkpoint == "" {
 			notice = "Python REPL restarted with variables cleared (no checkpoint available)"
 		}
-		r.notices = append(r.notices, notice+" ("+r.recoveryReason.Error()+")")
+		if errors.Is(r.recoveryReason, errREPLInterruptTimeout) {
+			notice = "REPL unresponsive; restarted from last checkpoint. Changes from the interrupted call may be lost."
+			if r.checkpoint == "" {
+				notice = "REPL unresponsive; restarted with variables cleared (no checkpoint available)."
+			}
+		} else {
+			notice += " (" + r.recoveryReason.Error() + ")"
+		}
+		r.notices = append(r.notices, notice)
 		r.recoveryReason = nil
 	}
 	return nil
@@ -323,7 +331,7 @@ func (r *pythonREPL) runLLMHostCall(ctx context.Context, stdin io.Writer, id int
 }
 
 func formatREPLError(err error) string {
-	if err == context.Canceled {
+	if errors.Is(err, context.Canceled) {
 		return ""
 	}
 	return "REPL error: " + err.Error()
