@@ -72,6 +72,8 @@ func TestTmuxHarness(t *testing.T) {
 		case "cancel":
 			emit(toolEvent{Kind: toolEventTextDelta, Detail: "WAITING-FOR-CANCEL"})
 			<-ctx.Done()
+			time.Sleep(50 * time.Millisecond)
+			emit(toolEvent{Kind: toolEventREPLRecovery, Detail: "Python REPL restarted from last checkpoint"})
 			return agent.Response{}
 		default:
 			for _, chunk := range []string{"ECHO<", input, ">"} {

@@ -149,6 +149,7 @@ wait_for 'WAITING-FOR-CANCEL'
 "${tmux[@]}" send-keys -t "$session" -l draft-after-cancel
 "${tmux[@]}" send-keys -t "$session" C-c
 wait_for 'Cancelled.'
+wait_for 'Python REPL restarted from last checkpoint'
 visible=$("${tmux[@]}" capture-pane -p -t "$session")
 grep -q '│ queued-after-cancel' <<<"$visible"
 grep -q '│ steer-after-cancel' <<<"$visible"

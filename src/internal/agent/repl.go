@@ -19,15 +19,26 @@ import (
 //go:embed repl.py
 var pythonREPLScript string
 
+const (
+	replInterruptGracePeriod = time.Second
+	replCheckpointTimeout    = 5 * time.Second
+)
+
+var errREPLInterruptTimeout = errors.New("Python REPL did not respond to interrupt")
+
 type pythonREPL struct {
-	mu      sync.Mutex
-	stdinMu sync.Mutex
-	llm     func(context.Context, string) (string, error)
-	cmd     *exec.Cmd
-	stdin   io.WriteCloser
-	stdout  *bufio.Reader
-	stderr  strings.Builder
-	started bool
+	mu                sync.Mutex
+	stdinMu           sync.Mutex
+	llm               func(context.Context, string) (string, error)
+	cmd               *exec.Cmd
+	stdin             io.WriteCloser
+	stdout            *bufio.Reader
+	stderr            strings.Builder
+	started           bool
+	checkpoint        string
+	checkpointObjects string
+	recoveryReason    error
+	notices           []string
 }
 
 type replResult struct {
@@ -42,21 +53,29 @@ func newPythonREPL(llm func(context.Context, string) (string, error)) *pythonREP
 	return &pythonREPL{llm: llm}
 }
 
-func (r *pythonREPL) start() error {
+func (r *pythonREPL) startProcess() error {
+	if r.cmd != nil {
+		return nil
+	}
 	r.stderr.Reset()
-	r.cmd = exec.Command("python3", "-u", "-c", pythonREPLScript)
-	stdin, err := r.cmd.StdinPipe()
+	cmd := exec.Command("python3", "-u", "-c", pythonREPLScript)
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	// Detached descendants may keep stderr open after the REPL exits.
+	cmd.WaitDelay = replInterruptGracePeriod
+	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return err
 	}
-	stdout, err := r.cmd.StdoutPipe()
+	stdout, err := cmd.StdoutPipe()
 	if err != nil {
+		_ = stdin.Close()
 		return err
 	}
-	r.cmd.Stderr = &r.stderr
-	if err := r.cmd.Start(); err != nil {
+	cmd.Stderr = &r.stderr
+	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("start Python REPL: %w", err)
 	}
+	r.cmd = cmd
 	r.stdin = stdin
 	r.stdout = bufio.NewReader(stdout)
 	r.started = true
@@ -67,22 +86,21 @@ func (r *pythonREPL) stop() {
 	if r.cmd == nil {
 		return
 	}
-	cmd := r.cmd
-	r.stdinMu.Lock()
+	r.recoveryReason = errors.New("Python REPL stopped")
 	_ = r.stdin.Close()
-	r.stdinMu.Unlock()
-	_ = cmd.Process.Signal(syscall.SIGTERM)
-	done := make(chan struct{})
-	go func() {
+	_ = syscall.Kill(-r.cmd.Process.Pid, syscall.SIGTERM)
+	wait := make(chan struct{})
+	go func(cmd *exec.Cmd) {
 		_ = cmd.Wait()
-		close(done)
-	}()
+		close(wait)
+	}(r.cmd)
 	select {
-	case <-done:
-	case <-time.After(500 * time.Millisecond):
-		_ = cmd.Process.Kill()
-		<-done
+	case <-wait:
+	case <-time.After(replInterruptGracePeriod):
+		_ = syscall.Kill(-r.cmd.Process.Pid, syscall.SIGKILL)
+		<-wait
 	}
+	_ = syscall.Kill(-r.cmd.Process.Pid, syscall.SIGKILL)
 	r.cmd, r.stdin, r.stdout = nil, nil, nil
 }
 
@@ -92,65 +110,135 @@ func (r *pythonREPL) close() {
 	r.stop()
 }
 
-func (r *pythonREPL) execute(ctx context.Context, code string) (string, bool, error) {
-	if err := ctx.Err(); err != nil {
-		return "", true, err
+func (r *pythonREPL) start() error {
+	if r.cmd != nil {
+		return nil
 	}
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if r.cmd == nil {
-		if err := r.start(); err != nil {
-			return "", true, err
+	if err := r.startProcess(); err != nil {
+		return err
+	}
+	if r.checkpoint != "" {
+		ctx, cancel := context.WithTimeout(context.Background(), replCheckpointTimeout)
+		defer cancel()
+		if err := r.operationLocked(ctx, "restore", r.checkpoint, r.checkpointObjects); err != nil {
+			r.stop()
+			r.notices = append(r.notices, "REPL recovery failed; the last checkpoint was preserved: "+err.Error())
+			return fmt.Errorf("restore Python REPL checkpoint: %w", err)
 		}
 	}
-	data, err := json.Marshal(map[string]string{"code": code})
+	if r.recoveryReason != nil {
+		notice := "Python REPL restarted from last checkpoint; changes since that checkpoint were lost"
+		if r.checkpoint == "" {
+			notice = "Python REPL restarted with variables cleared (no checkpoint available)"
+		}
+		r.notices = append(r.notices, notice+" ("+r.recoveryReason.Error()+")")
+		r.recoveryReason = nil
+	}
+	return nil
+}
+
+func (r *pythonREPL) recover(err error) error {
+	if r.cmd != nil {
+		return err
+	}
+	r.recoveryReason = err
+	if restartErr := r.start(); restartErr != nil {
+		return errors.Join(err, restartErr)
+	}
+	return fmt.Errorf("%s: %w", r.notices[len(r.notices)-1], err)
+}
+
+func (r *pythonREPL) takeNotices() []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	notices := r.notices
+	r.notices = nil
+	return notices
+}
+
+func (r *pythonREPL) execute(ctx context.Context, code string) (string, bool, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return "", false, err
+	}
+	if err := r.start(); err != nil {
+		return "", false, err
+	}
+	output, failed, err := r.requestLocked(ctx, map[string]string{"code": code})
 	if err != nil {
-		return "", true, err
+		return output, failed, r.recover(err)
 	}
-	if _, err := r.write(append(data, '\n')); err != nil {
-		r.stop()
-		return "", true, err
-	}
-	return r.readResult(ctx)
+	return output, failed, nil
 }
 
 func (r *pythonREPL) snapshot(path, objectsPath string) error {
-	tmp := path + ".tmp"
-	if err := r.operation(map[string]string{"op": "snapshot", "path": tmp, "objects_path": objectsPath}); err != nil {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if err := r.start(); err != nil {
 		return err
 	}
-	return os.Rename(tmp, path)
+	snapshot := func() error {
+		ctx, cancel := context.WithTimeout(context.Background(), replCheckpointTimeout)
+		defer cancel()
+		return r.operationLocked(ctx, "snapshot", path+".tmp", objectsPath)
+	}
+	if err := snapshot(); err != nil {
+		if r.cmd != nil {
+			return err
+		}
+		err = r.recover(err)
+		if r.cmd == nil {
+			return err
+		}
+		if err := snapshot(); err != nil {
+			return r.recover(err)
+		}
+	}
+	if err := os.Rename(path+".tmp", path); err != nil {
+		return err
+	}
+	r.checkpoint, r.checkpointObjects = path, objectsPath
+	return nil
 }
 
 func (r *pythonREPL) restore(path, objectsPath string) error {
-	return r.operation(map[string]string{"op": "restore", "path": path, "objects_path": objectsPath})
-}
-
-func (r *pythonREPL) operation(request map[string]string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if r.cmd == nil {
-		if r.started {
-			return errors.New("Python REPL is stopped")
-		}
-		if err := r.start(); err != nil {
-			return err
-		}
-	}
-	data, err := json.Marshal(request)
-	if err != nil {
+	if err := r.startProcess(); err != nil {
 		return err
 	}
-	if _, err := r.write(append(data, '\n')); err != nil {
+	ctx, cancel := context.WithTimeout(context.Background(), replCheckpointTimeout)
+	defer cancel()
+	if err := r.operationLocked(ctx, "restore", path, objectsPath); err != nil {
 		r.stop()
 		return err
 	}
-	_, _, err = r.readResult(context.Background())
-	return err
+	r.checkpoint, r.checkpointObjects = path, objectsPath
+	return nil
 }
 
-func (r *pythonREPL) write(data []byte) (int, error) {
-	return r.writeTo(r.stdin, data)
+func (r *pythonREPL) operationLocked(ctx context.Context, op, path, objectsPath string) error {
+	output, failed, err := r.requestLocked(ctx, map[string]string{"op": op, "path": path, "objects_path": objectsPath})
+	if err != nil {
+		return err
+	}
+	if failed {
+		return errors.New(output)
+	}
+	return nil
+}
+
+func (r *pythonREPL) requestLocked(ctx context.Context, request map[string]string) (string, bool, error) {
+	payload, err := json.Marshal(request)
+	if err != nil {
+		return "", false, err
+	}
+	if _, err := r.writeTo(r.stdin, append(payload, '\n')); err != nil {
+		r.stop()
+		return "", false, err
+	}
+	return r.readResult(ctx)
 }
 
 func (r *pythonREPL) writeTo(stdin io.Writer, data []byte) (int, error) {
@@ -167,12 +255,13 @@ func (r *pythonREPL) readResult(ctx context.Context) (string, bool, error) {
 	hostCallError := make(chan error, 1)
 	cancel := ctx.Done()
 	var canceled error
+	var interruptDeadline <-chan time.Time
 	for {
 		read := make(chan readResult, 1)
-		go func() {
-			line, err := r.stdout.ReadBytes('\n')
+		go func(stdout *bufio.Reader) {
+			line, err := stdout.ReadBytes('\n')
 			read <- readResult{line: line, err: err}
-		}()
+		}(r.stdout)
 
 		var result readResult
 		for {
@@ -181,6 +270,11 @@ func (r *pythonREPL) readResult(ctx context.Context) (string, bool, error) {
 				canceled = ctx.Err()
 				cancel = nil
 				_ = r.cmd.Process.Signal(syscall.SIGINT)
+				interruptDeadline = time.After(replInterruptGracePeriod)
+			case <-interruptDeadline:
+				r.stop()
+				<-read
+				return "", true, errors.Join(errREPLInterruptTimeout, canceled)
 			case err := <-hostCallError:
 				r.stop()
 				return "", true, err

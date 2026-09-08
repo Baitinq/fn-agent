@@ -165,6 +165,7 @@ const (
 	ToolEventAttemptFailed ToolEventKind = iota
 	ToolEventCompactionStart
 	ToolEventCompactionDone
+	ToolEventREPLRecovery
 	ToolEventCompactionFailed
 	ToolEventRetry
 	ToolEventRetryDone
@@ -638,17 +639,32 @@ func (a *Agent) Respond(msg string, steer <-chan string, emit func(ToolEvent), c
 	assert.That(ctx != nil, "respond without context")
 	a.respondMu.Lock()
 	defer a.respondMu.Unlock()
+	emitREPLNotices := func() {
+		if a.repl == nil {
+			return
+		}
+		for _, notice := range a.repl.takeNotices() {
+			emit(ToolEvent{Kind: ToolEventREPLRecovery, Detail: notice})
+		}
+	}
+	emitREPLNotices()
+	saveSession := func() error {
+		err := a.SaveSession()
+		emitREPLNotices()
+		return err
+	}
 	if err := a.appendUserMessage(msg); err != nil {
+		emitREPLNotices()
 		return Response{Err: err}
 	}
-	if err := a.SaveSession(); err != nil {
+	if err := saveSession(); err != nil {
 		return Response{Err: fmt.Errorf("save session: %w", err)}
 	}
 	defer func() {
 		a.pruneTransientHistory()
 		emit(ToolEvent{Kind: ToolEventToolResultsPruned})
 		emit(ToolEvent{Kind: ToolEventTransientHistoryPruned})
-		if err := a.SaveSession(); err != nil && result.Err == nil {
+		if err := saveSession(); err != nil && result.Err == nil {
 			result.Err = fmt.Errorf("save session: %w", err)
 		}
 	}()
@@ -707,7 +723,7 @@ func (a *Agent) Respond(msg string, steer <-chan string, emit func(ToolEvent), c
 		a.pruneToolResults()
 		emit(ToolEvent{Kind: ToolEventToolResultsPruned})
 		a.history = append(a.history, resp.Items...)
-		if err := a.SaveSession(); err != nil {
+		if err := saveSession(); err != nil {
 			return Response{Err: fmt.Errorf("save session: %w", err)}
 		}
 		if len(resp.ToolCalls) == 0 {
@@ -723,7 +739,7 @@ func (a *Agent) Respond(msg string, steer <-chan string, emit func(ToolEvent), c
 						a.history[i].transient = true
 					}
 				}
-				if err := a.SaveSession(); err != nil {
+				if err := saveSession(); err != nil {
 					return Response{Err: fmt.Errorf("save session: %w", err)}
 				}
 				continue
@@ -752,6 +768,7 @@ func (a *Agent) Respond(msg string, steer <-chan string, emit func(ToolEvent), c
 				}
 				emit(ToolEvent{Kind: ToolEventCall, Name: call.Name, ID: call.CallID, Detail: args.Code})
 				result, replFailed, err := a.pythonREPL().execute(ctx, args.Code)
+				emitREPLNotices()
 				failed = replFailed
 				if err != nil {
 					output = formatREPLError(err)
@@ -770,7 +787,7 @@ func (a *Agent) Respond(msg string, steer <-chan string, emit func(ToolEvent), c
 				emit(ToolEvent{Kind: ToolEventError, Name: call.Name, ID: call.CallID, Detail: output})
 			}
 			a.history = append(a.history, historyItem{Type: "tool_result", CallID: call.CallID, Name: call.Name, Text: output, ToolError: failed})
-			if err := a.SaveSession(); err != nil {
+			if err := saveSession(); err != nil {
 				return Response{Err: fmt.Errorf("save session: %w", err)}
 			}
 			if ctx.Err() != nil {
@@ -780,7 +797,7 @@ func (a *Agent) Respond(msg string, steer <-chan string, emit func(ToolEvent), c
 		if _, err := a.consumeSteering(steer, emit); err != nil {
 			return Response{Err: err}
 		}
-		if err := a.SaveSession(); err != nil {
+		if err := saveSession(); err != nil {
 			return Response{Err: fmt.Errorf("save session: %w", err)}
 		}
 	}

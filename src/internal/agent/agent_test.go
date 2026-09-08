@@ -977,6 +977,148 @@ func TestPythonREPLCancellationStopsConcurrentShellCalls(t *testing.T) {
 	}
 }
 
+func TestPythonREPLRestartsWhenInterruptIsIgnored(t *testing.T) {
+	for name, code := range map[string]string{
+		"blocking code":  "import time; ready(); time.sleep(30)",
+		"ignored signal": "import signal, asyncio; signal.signal(signal.SIGINT, signal.SIG_IGN); ready(); await asyncio.sleep(30)",
+		"ignored cancellation": `
+import asyncio
+try:
+    ready()
+    await asyncio.sleep(30)
+except asyncio.CancelledError:
+    await asyncio.sleep(30)
+`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			repl := newPythonREPL(nil)
+			t.Cleanup(repl.close)
+			if _, _, err := repl.execute(t.Context(), "saved = 42"); err != nil {
+				t.Fatal(err)
+			}
+			checkpointDir := t.TempDir()
+			if err := repl.snapshot(checkpointDir+"/state.json", checkpointDir+"/objects"); err != nil {
+				t.Fatal(err)
+			}
+			process := repl.cmd.Process
+			marker := t.TempDir() + "/started"
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			result := make(chan error, 1)
+			go func() {
+				_, _, err := repl.execute(ctx, fmt.Sprintf("saved = 99\nunsaved = True\ndef ready():\n    open(%q, 'w').close()\n%s", marker, code))
+				result <- err
+			}()
+			deadline := time.Now().Add(5 * time.Second)
+			for {
+				if _, err := os.Stat(marker); err == nil {
+					break
+				}
+				if time.Now().After(deadline) {
+					_ = process.Kill()
+					<-result
+					t.Fatal("Python did not start executing")
+				}
+				time.Sleep(time.Millisecond)
+			}
+			cancel()
+			select {
+			case err := <-result:
+				if !errors.Is(err, context.Canceled) || !strings.Contains(err.Error(), "restarted from last checkpoint") {
+					t.Fatalf("cancellation error = %v", err)
+				}
+			case <-time.After(10 * time.Second):
+				_ = process.Kill()
+				<-result
+				t.Fatal("interrupt did not return")
+			}
+			output, failed, err := repl.execute(t.Context(), "(saved, 'unsaved' in globals())")
+			if err != nil || failed || output != "(42, False)" {
+				t.Fatalf("result after restart = %q, failed=%v, error=%v", output, failed, err)
+			}
+			if repl.cmd.Process.Pid == process.Pid {
+				t.Fatal("unresponsive REPL was not restarted")
+			}
+		})
+	}
+}
+
+func TestPythonREPLRestartUsesRestoredCheckpoint(t *testing.T) {
+	checkpointDir := t.TempDir()
+	checkpoint := checkpointDir + "/state.json"
+	objects := checkpointDir + "/objects"
+	original := newPythonREPL(nil)
+	t.Cleanup(original.close)
+	if _, _, err := original.execute(t.Context(), "saved = (40, 2)"); err != nil {
+		t.Fatal(err)
+	}
+	if err := original.snapshot(checkpoint, objects); err != nil {
+		t.Fatal(err)
+	}
+	original.close()
+
+	repl := newPythonREPL(nil)
+	t.Cleanup(repl.close)
+	if err := repl.restore(checkpoint, objects); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 200*time.Millisecond)
+	defer cancel()
+	_, _, err := repl.execute(ctx, "saved = 99; import time; time.sleep(30)")
+	if !errors.Is(err, context.DeadlineExceeded) || !strings.Contains(err.Error(), "restarted from last checkpoint") {
+		t.Fatalf("cancellation error = %v", err)
+	}
+	output, failed, err := repl.execute(t.Context(), "saved")
+	if err != nil || failed || output != "(40, 2)" {
+		t.Fatalf("restored state = %q, failed=%v, error=%v", output, failed, err)
+	}
+}
+
+func TestPythonREPLCancelWithInheritedStderr(t *testing.T) {
+	repl := newPythonREPL(nil)
+	t.Cleanup(repl.close)
+	output, failed, err := repl.execute(t.Context(), `
+import subprocess
+child = subprocess.Popen(["sleep", "30"], stdout=subprocess.DEVNULL)
+child.pid
+`)
+	if err != nil || failed {
+		t.Fatalf("start child: output=%q, failed=%v, error=%v", output, failed, err)
+	}
+	var pid int
+	if _, err := fmt.Sscan(output, &pid); err != nil {
+		t.Fatal(err)
+	}
+	child, err := os.FindProcess(pid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = child.Kill() })
+	process := repl.cmd.Process
+	ctx, cancel := context.WithTimeout(t.Context(), 200*time.Millisecond)
+	defer cancel()
+	result := make(chan error, 1)
+	go func() {
+		_, _, err := repl.execute(ctx, "import time; time.sleep(30)")
+		result <- err
+	}()
+	select {
+	case err := <-result:
+		if !errors.Is(err, context.DeadlineExceeded) || !strings.Contains(err.Error(), "restarted") {
+			t.Fatalf("cancellation error = %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		_ = process.Kill()
+		_ = child.Kill()
+		<-result
+		t.Fatal("interrupt blocked on inherited stderr")
+	}
+	output, failed, err = repl.execute(t.Context(), "40 + 2")
+	if err != nil || failed || output != "42" {
+		t.Fatalf("result after restart = %q, failed=%v, error=%v", output, failed, err)
+	}
+}
+
 func TestPythonREPLIgnoresInterruptWhileIdle(t *testing.T) {
 	repl := newPythonREPL(nil)
 	t.Cleanup(repl.close)

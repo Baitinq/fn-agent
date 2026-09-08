@@ -113,6 +113,14 @@ model context. After a turn, its reasoning and REPL results remain visible in th
 terminal but are omitted from future requests. User messages, final responses, REPL
 code, and Python state persist.
 
+If the REPL crashes or cannot be interrupted, fn restarts it and restores its last
+successful checkpoint on a best-effort basis. A transcript notice reports recovery
+and warns that changes since that checkpoint were lost. Without a checkpoint, it
+starts with empty state and says so. Interrupted code is never replayed
+automatically. Checkpoint operations also have deadlines; failed recovery does not
+overwrite the last checkpoint. Live subprocesses and other external resources
+cannot be restored.
+
 ## MCP
 
 fn agent keeps MCP out of its core. It uses

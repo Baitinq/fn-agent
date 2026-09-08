@@ -43,6 +43,7 @@ const (
 	toolEventAttemptFailed          = agent.ToolEventAttemptFailed
 	toolEventCompactionStart        = agent.ToolEventCompactionStart
 	toolEventCompactionDone         = agent.ToolEventCompactionDone
+	toolEventREPLRecovery           = agent.ToolEventREPLRecovery
 	toolEventCompactionFailed       = agent.ToolEventCompactionFailed
 	toolEventRetry                  = agent.ToolEventRetry
 	toolEventRetryDone              = agent.ToolEventRetryDone
@@ -285,6 +286,11 @@ func (s *fnUI) spin(ctx context.Context, finished <-chan struct{}, id int) {
 }
 
 func (s *fnUI) handleToolEvent(id int, ev toolEvent) {
+	// Recovery remains relevant after the originating turn was cancelled.
+	if ev.Kind == toolEventREPLRecovery {
+		s.addMessage(message{role: "status", text: "⚠ " + ev.Detail})
+		return
+	}
 	if id != s.nextRequestID || !s.responding {
 		return
 	}

@@ -1492,3 +1492,22 @@ func TestRestoreConversationPopulatesTranscriptAndInputHistory(t *testing.T) {
 		t.Fatalf("restored input history = %#v", s.inputHistory)
 	}
 }
+
+func TestREPLRecoveryNoticeIsRetained(t *testing.T) {
+	for _, cancelled := range []bool{false, true} {
+		t.Run(fmt.Sprintf("cancelled=%v", cancelled), func(t *testing.T) {
+			s, _ := newState(nil)
+			s.responding = true
+			s.nextRequestID = 1
+			if cancelled {
+				s.cancel = func() {}
+				s.cancelRequest()
+			}
+			s.handleToolEvent(1, toolEvent{Kind: toolEventREPLRecovery, Detail: "Python REPL restarted from last checkpoint"})
+			notice := s.messages[len(s.messages)-1]
+			if notice.role != "status" || !strings.Contains(notice.text, "restarted from last checkpoint") {
+				t.Fatalf("recovery notice missing: %#v", s.messages)
+			}
+		})
+	}
+}
