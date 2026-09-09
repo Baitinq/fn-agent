@@ -20,7 +20,6 @@ type mainScreenRenderer struct {
 	previousHeight      int
 	cursorRow           int
 	hardwareCursorRow   int
-	maxLinesRendered    int
 	previousViewportTop int
 }
 
@@ -77,11 +76,6 @@ func (r *mainScreenRenderer) render(lines []string, cursorRow, cursorCol int) er
 		}
 		r.cursorRow = max(0, len(lines)-1)
 		r.hardwareCursorRow = r.cursorRow
-		if clear {
-			r.maxLinesRendered = len(lines)
-		} else {
-			r.maxLinesRendered = max(r.maxLinesRendered, len(lines))
-		}
 		r.previousViewportTop = max(0, max(height, len(lines))-height)
 		r.commit(lines, width, height)
 		return r.positionCursor(cursorRow, cursorCol, len(lines))
@@ -93,7 +87,7 @@ func (r *mainScreenRenderer) render(lines []string, cursorRow, cursorCol int) er
 		}
 		return fullRender(false)
 	}
-	if widthChanged || heightChanged || len(lines) < r.maxLinesRendered {
+	if widthChanged || heightChanged {
 		if err := validateLines(0, len(lines)); err != nil {
 			return err
 		}
@@ -101,11 +95,7 @@ func (r *mainScreenRenderer) render(lines []string, cursorRow, cursorCol int) er
 	}
 
 	firstChanged, lastChanged := -1, -1
-	compareFrom := 0
-	if len(lines) == len(r.previousLines) {
-		compareFrom = prevViewportTop
-	}
-	for i := compareFrom; i < max(len(lines), len(r.previousLines)); i++ {
+	for i := prevViewportTop; i < max(len(lines), len(r.previousLines)); i++ {
 		oldLine, newLine := "", ""
 		if i < len(r.previousLines) {
 			oldLine = r.previousLines[i]
@@ -120,16 +110,28 @@ func (r *mainScreenRenderer) render(lines []string, cursorRow, cursorCol int) er
 			lastChanged = i
 		}
 	}
+	shrinking := len(lines) < len(r.previousLines)
+	if shrinking {
+		if firstChanged < 0 {
+			firstChanged = len(lines)
+		}
+		lastChanged = len(r.previousLines) - 1
+	}
 	if firstChanged < 0 {
 		r.previousViewportTop = prevViewportTop
 		r.commit(lines, width, height)
 		return r.positionCursor(cursorRow, cursorCol, len(lines))
 	}
+	reanchor := shrinking && max(0, len(lines)-height) < prevViewportTop
+	if reanchor {
+		// The input moved above the addressable screen. Repaint only the
+		// visible tail, leaving terminal scrollback intact.
+		prevViewportTop = max(0, len(lines)-height)
+		firstChanged = prevViewportTop
+		lastChanged = len(lines) - 1
+	}
 	if err := validateLines(firstChanged, min(lastChanged+1, len(lines))); err != nil {
 		return err
-	}
-	if firstChanged < prevViewportTop || firstChanged >= len(lines) {
-		return fullRender(true)
 	}
 
 	appendStart := len(lines) > len(r.previousLines) && firstChanged == len(r.previousLines) && firstChanged > 0
@@ -143,6 +145,10 @@ func (r *mainScreenRenderer) render(lines []string, cursorRow, cursorCol int) er
 
 	var b strings.Builder
 	b.WriteString("\x1b[?2026h")
+	if reanchor {
+		b.WriteString("\x1b[2J\x1b[H")
+		hardwareRow = prevViewportTop
+	}
 	if moveTarget > viewportBottom {
 		currentScreenRow := min(max(hardwareRow-prevViewportTop, 0), height-1)
 		if n := height - 1 - currentScreenRow; n > 0 {
@@ -167,13 +173,14 @@ func (r *mainScreenRenderer) render(lines []string, cursorRow, cursorCol int) er
 		b.WriteByte('\r')
 	}
 
-	renderEnd := min(lastChanged, len(lines)-1)
-	for i := firstChanged; i <= renderEnd; i++ {
+	for i := firstChanged; i <= lastChanged; i++ {
 		if i > firstChanged {
 			b.WriteString("\r\n")
 		}
 		b.WriteString("\x1b[2K")
-		b.WriteString(lines[i])
+		if i < len(lines) {
+			b.WriteString(lines[i])
+		}
 	}
 	b.WriteString("\x1b[?2026l")
 	if _, err := io.WriteString(r.out, b.String()); err != nil {
@@ -181,9 +188,8 @@ func (r *mainScreenRenderer) render(lines []string, cursorRow, cursorCol int) er
 	}
 
 	r.cursorRow = max(0, len(lines)-1)
-	r.hardwareCursorRow = renderEnd
-	r.maxLinesRendered = max(r.maxLinesRendered, len(lines))
-	r.previousViewportTop = max(prevViewportTop, renderEnd-height+1)
+	r.hardwareCursorRow = lastChanged
+	r.previousViewportTop = max(prevViewportTop, lastChanged-height+1)
 	r.commit(lines, width, height)
 	return r.positionCursor(cursorRow, cursorCol, len(lines))
 }

@@ -36,6 +36,52 @@ all=$(capture)
 grep -q 'STREAM-LINE-01' <<<"$all"
 grep -q 'STREAM-LINE-32' <<<"$all"
 
+# Recall wrapped entries, including one taller than the terminal, without
+# replaying the transcript or clearing native scrollback.
+wrapped="HISTORY-WRAPPED-$(printf 'word %.0s' $(seq 1 35))WRAPPED-END"
+oversized="HISTORY-HUGE-$(printf 'word %.0s' $(seq 1 300))HUGE-END"
+for entry in HISTORY-SHORT "$wrapped" "$oversized"; do
+  "${tmux[@]}" send-keys -t "$session" -l "$entry"
+  "${tmux[@]}" send-keys -t "$session" Enter
+  wait_for "${entry##* }[>]"
+done
+sleep .2
+history_before=$(capture | rg -c 'STREAM-LINE-01')
+"${tmux[@]}" pipe-pane -t "$session" "cat > '$render_log'"
+for _ in 1 2 3; do
+  "${tmux[@]}" send-keys -t "$session" Up
+  sleep .15
+  "${tmux[@]}" send-keys -t "$session" Up
+  sleep .15
+  "${tmux[@]}" send-keys -t "$session" Up
+  sleep .15
+  visible=$("${tmux[@]}" capture-pane -p -t "$session")
+  rg -q '^│ HISTORY-SHORT' <<<"$visible"
+  if rg -q '^│ .*word|^│ .*HUGE-END|^│ .*WRAPPED-END' <<<"$visible"; then
+    echo 'input history left stale wrapped rows' >&2; printf '%s\n' "$visible" >&2; exit 1
+  fi
+  for _ in 1 2 3; do
+    "${tmux[@]}" send-keys -t "$session" Down
+    sleep .15
+  done
+done
+"${tmux[@]}" send-keys -t "$session" -l CURSOR-AFTER-HISTORY
+sleep .15
+"${tmux[@]}" capture-pane -p -t "$session" | rg -q '^│ CURSOR-AFTER-HISTORY'
+read -r cursor_x cursor_y <<<"$("${tmux[@]}" display-message -p -t "$session" '#{cursor_x} #{cursor_y}')"
+test "$cursor_x" = 22
+"${tmux[@]}" capture-pane -p -t "$session" | sed -n "$((cursor_y + 1))p" | rg -q '^│ CURSOR-AFTER-HISTORY'
+"${tmux[@]}" send-keys -t "$session" Escape
+sleep .15
+"${tmux[@]}" pipe-pane -t "$session"
+test "$(capture | rg -c 'STREAM-LINE-01')" = "$history_before"
+python3 - "$render_log" <<'PYCHECK'
+import pathlib, sys
+output = pathlib.Path(sys.argv[1]).read_bytes()
+assert b'\x1b[3J' not in output, 'input history cleared scrollback'
+assert b'STREAM-LINE-01' not in output, 'input history replayed the conversation'
+PYCHECK
+
 # Shift+Enter queues while plain Enter steers; the steer must run first.
 "${tmux[@]}" send-keys -t "$session" -l stream
 "${tmux[@]}" send-keys -t "$session" Enter
