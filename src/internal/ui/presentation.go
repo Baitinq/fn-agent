@@ -247,6 +247,7 @@ func toolDurationLabel(msg message, now time.Time) string {
 }
 
 func renderedMarkdownLines(text string, width int) []string {
+	text = sanitizeTerminalText(text)
 	style := styles.ASCIIStyleConfig
 	zero := uint(0)
 	style.Document.Margin = &zero

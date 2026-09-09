@@ -1524,3 +1524,16 @@ func TestCanceledResponseMessage(t *testing.T) {
 		}
 	}
 }
+
+func TestRenderedMarkdownLinesSanitizesTerminalControls(t *testing.T) {
+	rendered := strings.Join(renderedMarkdownLines("before\x1b]52;c;SGFja2VkBw==\aafter\x1b[2J\u009b2J", 80), "\n")
+
+	for _, sequence := range []string{"\x1b]52", "\x1b[2J", "\u009b"} {
+		if strings.Contains(rendered, sequence) {
+			t.Fatalf("rendered output contains terminal control sequence %q: %q", sequence, rendered)
+		}
+	}
+	if !strings.Contains(rendered, "beforeafter2J") {
+		t.Fatalf("rendered output lost surrounding text: %q", rendered)
+	}
+}
