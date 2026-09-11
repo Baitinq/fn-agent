@@ -393,6 +393,7 @@ func (a *Agent) snapshotREPL() (string, error) {
 
 func (a *Agent) appendUserMessage(msg string) error {
 	a.assertSessionInitialized()
+	a.completeInterruptedToolCalls()
 	checkpoint, err := a.snapshotREPL()
 	if err != nil {
 		return err

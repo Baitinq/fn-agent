@@ -210,6 +210,21 @@ func TestPythonCheckpointsReuseUnchangedValues(t *testing.T) {
 	}
 }
 
+func TestAppendUserMessageCompletesInterruptedToolCall(t *testing.T) {
+	a := &Agent{}
+	startTestSession(t, a)
+	defer a.Close()
+	a.history = []historyItem{{Type: "tool_call", CallID: "call-1", Name: "repl", Text: `{"code":"1"}`}}
+
+	if err := a.appendUserMessage("continue"); err != nil {
+		t.Fatal(err)
+	}
+
+	if len(a.history) != 3 || a.history[1].Type != "tool_result" || a.history[1].CallID != "call-1" || a.history[2].Type != "message" || a.history[2].Role != "user" {
+		t.Fatalf("history = %#v", a.history)
+	}
+}
+
 func TestFailedUndoRestoresPythonState(t *testing.T) {
 	a := &Agent{}
 	startTestSession(t, a)
