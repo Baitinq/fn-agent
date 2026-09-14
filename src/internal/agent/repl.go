@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 	"syscall"
@@ -223,6 +224,43 @@ func (r *pythonREPL) restore(path, objectsPath string) error {
 		return err
 	}
 	r.checkpoint, r.checkpointObjects = path, objectsPath
+	return nil
+}
+
+func (r *pythonREPL) gcObjects(snapshotPaths []string, objectsPath string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	referenced := make(map[string]struct{})
+	for _, snapshotPath := range snapshotPaths {
+		data, err := os.ReadFile(snapshotPath)
+		if err != nil {
+			return err
+		}
+		var snapshot map[string]string
+		if err := json.Unmarshal(data, &snapshot); err != nil {
+			return err
+		}
+		for _, object := range snapshot {
+			referenced[object] = struct{}{}
+		}
+	}
+
+	objects, err := os.ReadDir(objectsPath)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	for _, object := range objects {
+		if _, ok := referenced[object.Name()]; ok {
+			continue
+		}
+		if err := os.Remove(filepath.Join(objectsPath, object.Name())); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 

@@ -451,9 +451,19 @@ func (a *Agent) markSessionSaved() {
 
 func (a *Agent) SaveSession() error {
 	a.assertSessionInitialized()
+	var replSnapshots []string
+	var replObjectsPath string
 	if a.repl != nil {
-		if err := a.repl.snapshot(filepath.Join(a.sessionDir, "repl.json"), filepath.Join(a.sessionDir, "repl-objects")); err != nil {
+		snapshotPath := filepath.Join(a.sessionDir, "repl.json")
+		replObjectsPath = filepath.Join(a.sessionDir, "repl-objects")
+		if err := a.repl.snapshot(snapshotPath, replObjectsPath); err != nil {
 			return fmt.Errorf("save Python state: %w", err)
+		}
+		replSnapshots = append(replSnapshots, snapshotPath)
+		for _, item := range a.history {
+			if item.REPLCheckpoint != "" {
+				replSnapshots = append(replSnapshots, filepath.Join(a.sessionDir, item.REPLCheckpoint))
+			}
 		}
 	}
 	usage := a.Usage()
@@ -495,5 +505,9 @@ func (a *Agent) SaveSession() error {
 		return err
 	}
 	a.markSessionSaved()
+	if a.repl != nil {
+		// Cleanup is best-effort; it must not prevent session persistence.
+		_ = a.repl.gcObjects(replSnapshots, replObjectsPath)
+	}
 	return nil
 }
