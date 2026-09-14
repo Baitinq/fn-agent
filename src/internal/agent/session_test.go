@@ -367,6 +367,25 @@ func TestSessionRestoresPythonState(t *testing.T) {
 	}
 }
 
+func TestResumeSessionAcceptsSameDirectoryThroughSymlink(t *testing.T) {
+	root := t.TempDir()
+	cwd := t.TempDir()
+	alias := filepath.Join(t.TempDir(), "cwd")
+	if err := os.Symlink(cwd, alias); err != nil {
+		t.Fatal(err)
+	}
+
+	a := &Agent{cwd: alias, provider: "openai", modelName: "test"}
+	if err := a.StartSession("abc", root); err != nil {
+		t.Fatal(err)
+	}
+
+	loaded := &Agent{cwd: cwd, provider: "openai", modelName: "test"}
+	if err := loaded.ResumeSession("abc", root); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestSessionRejectsDifferentWorkingDirectory(t *testing.T) {
 	root := t.TempDir()
 	id := "550e8400-e29b-41d4-a716-446655440000"

@@ -370,6 +370,15 @@ func readSession(path string) (sessionFile, error) {
 	return saved, nil
 }
 
+func sameDirectory(first, second string) bool {
+	if first == second {
+		return true
+	}
+	firstInfo, firstErr := os.Stat(first)
+	secondInfo, secondErr := os.Stat(second)
+	return firstErr == nil && secondErr == nil && os.SameFile(firstInfo, secondInfo)
+}
+
 func (a *Agent) ResumeSession(id, sessionsDir string) error {
 	a.assertSessionUninitialized()
 	assertSessionArguments(id, sessionsDir)
@@ -381,7 +390,7 @@ func (a *Agent) ResumeSession(id, sessionsDir string) error {
 	if saved.Version != sessionVersion {
 		return fmt.Errorf("load session %s: unsupported version %d (expected %d)", id, saved.Version, sessionVersion)
 	}
-	if saved.CWD != a.cwd {
+	if !sameDirectory(saved.CWD, a.cwd) {
 		return fmt.Errorf("session %s belongs to %s", id, saved.CWD)
 	}
 	if saved.Provider != "" && (saved.Provider != a.provider || saved.Model != a.modelName) && (os.Getenv("FN_PROVIDER") == "" || os.Getenv("FN_MODEL") == "") {
