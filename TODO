@@ -1,5 +1,8 @@
 # Ideas
 
+
+TODO: thinking shouildnt stop while tool calls are running, just like humans you can run a tool and still think and if its taking too long stop it and look etc. forcing single threading doesnt ammount to real intelligence
+
 - Computer interaction: screenshots, mouse, and keyboard.
 - Runtime commands: `/summarize`, `/model`, `/reasoning`, and `/tree`.
 - An agent scratchpad with optional user-visible progress.
