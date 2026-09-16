@@ -43,6 +43,7 @@ func (s *fnUI) render(width int, viewportHeight ...int) ([]string, int, int) {
 		lines = append(lines, s.renderedStreamingText(width)...)
 		lines = append(lines, "")
 	}
+	s.liveStart = len(lines)
 	if s.responding {
 		if s.retryAttempt > 0 {
 			remaining := max(time.Until(s.retryDeadline), 0)

@@ -20,6 +20,11 @@ go test -c -o "$binary" ./internal/ui
 "${tmux[@]}" send-keys -t "$session" -l STARTUP-DRAFT
 
 capture() { "${tmux[@]}" capture-pane -p -t "$session" -S -; }
+capture_visible() { "${tmux[@]}" capture-pane -p -t "$session"; }
+wait_until_idle() {
+  for _ in $(seq 1 200); do capture_visible | grep -q 'Type a message' && return 0; sleep .05; done
+  echo 'timed out waiting for idle editor' >&2; capture_visible >&2; return 1
+}
 wait_for() {
   local pattern=$1
   for _ in $(seq 1 200); do capture | grep -q "$pattern" && return 0; sleep .025; done
@@ -33,6 +38,7 @@ wait_for '│ STARTUP-DRAFT'
 "${tmux[@]}" send-keys -t "$session" -l stream
 "${tmux[@]}" send-keys -t "$session" Enter
 wait_for '321 context'
+wait_until_idle
 all=$(capture)
 grep -q 'STREAM-LINE-01' <<<"$all"
 grep -q 'STREAM-LINE-32' <<<"$all"
@@ -145,6 +151,7 @@ wait_for 'ECHO<alpha'
 "${tmux[@]}" send-keys -t "$session" Enter
 wait_for 'LIVE-PARTIAL'
 wait_for '654 context'
+wait_until_idle
 all=$(capture)
 grep -q '\$ printf tool-output' <<<"$all"
 grep -q '^ tool-output' <<<"$all"
@@ -158,6 +165,7 @@ wait_for 'STEER-WAIT'
 "${tmux[@]}" send-keys -t "$session" Enter
 wait_for 'STEERED<change-direction>'
 wait_for '901 context'
+wait_until_idle
 
 # A sustained tool stream remains live without rendering every individual
 # chunk. Capture raw pane output and count synchronized renderer frames.
@@ -170,6 +178,7 @@ sleep .05
 wait_for 'BURST-60'
 ! capture | grep -q '876 context'
 wait_for '876 context'
+wait_until_idle
 "${tmux[@]}" pipe-pane -t "$session"
 sleep .05
 read -r render_frames render_replays render_bytes < <(python3 - "$render_log" <<'PY'
@@ -196,6 +205,12 @@ grep -q 'BURST-01' <<<"$all"
 grep -q 'lines omitted' <<<"$all"
 grep -q 'BURST-60' <<<"$all"
 grep -q 'burst complete' <<<"$all"
+if rg -q '^[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏] Working…' <<<"$all" ||
+  [[ $(rg -c '^│ Type a message…' <<<"$all") -ne 1 ]]; then
+  echo 'live UI leaked after tool burst' >&2
+  printf '%s\n' "$all" >&2
+  exit 1
+fi
 
 # Ctrl+C cancels the active task and returns pending input to the editor.
 "${tmux[@]}" send-keys -t "$session" -l cancel
@@ -242,6 +257,7 @@ visible=$("${tmux[@]}" capture-pane -p -t "$session")
 grep -q '│ EDIT-14' <<<"$visible"
 "${tmux[@]}" send-keys -t "$session" Enter
 wait_for '777 context'
+wait_until_idle
 all=$(capture)
 grep -q 'EDIT-01' <<<"$all"
 grep -q 'EDIT-14' <<<"$all"

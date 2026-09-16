@@ -18,6 +18,7 @@ type mainScreenRenderer struct {
 	previousViewportTop int
 	hardwareCursorRow   int
 	forceReplay         bool
+	previousLiveStart   int
 }
 
 func newMainScreenRenderer(out io.Writer, width, height int) *mainScreenRenderer {
@@ -31,16 +32,23 @@ func (r *mainScreenRenderer) resize(width, height int) {
 }
 
 func (r *mainScreenRenderer) render(lines []string, cursorRow, cursorCol int) error {
-	return r.renderSized(lines, cursorRow, cursorCol, r.width, r.height)
+	return r.renderWithLiveStart(lines, cursorRow, cursorCol, len(lines))
 }
 
-func (r *mainScreenRenderer) renderSized(lines []string, cursorRow, cursorCol, width, height int) error {
+func (r *mainScreenRenderer) renderWithLiveStart(lines []string, cursorRow, cursorCol, liveStart int) error {
+	return r.renderSized(lines, cursorRow, cursorCol, liveStart, r.width, r.height)
+}
+
+func (r *mainScreenRenderer) renderSized(lines []string, cursorRow, cursorCol, liveStart, width, height int) error {
 	if len(lines) == 0 || width <= 0 || height <= 0 {
 		return nil
 	}
 
 	resized := r.forceReplay || width != r.width || height != r.height
 	firstChanged := r.firstChangedLine(lines)
+	if firstChanged >= 0 {
+		firstChanged = min(firstChanged, r.previousLiveStart)
+	}
 	lastChanged := r.lastChangedLine(lines)
 	if !resized && firstChanged < 0 {
 		var b strings.Builder
@@ -50,7 +58,7 @@ func (r *mainScreenRenderer) renderSized(lines []string, cursorRow, cursorCol, w
 		if _, err := io.WriteString(r.out, b.String()); err != nil {
 			return err
 		}
-		r.commit(lines, cursorRow, width, height, r.previousViewportTop)
+		r.commit(lines, cursorRow, liveStart, width, height, r.previousViewportTop)
 		return nil
 	}
 
@@ -65,7 +73,7 @@ func (r *mainScreenRenderer) renderSized(lines []string, cursorRow, cursorCol, w
 	newViewportTop := max(0, len(lines)-height)
 	replay := resized || len(r.previousLines) == 0 || newViewportTop < r.previousViewportTop
 	if !replay && len(lines) > len(r.previousLines) && firstChanged <= r.viewportBottom() && len(lines)-1 > r.viewportBottom() {
-		clearStart := max(firstChanged, r.previousViewportTop)
+		clearStart := max(min(firstChanged, r.previousLiveStart), r.previousViewportTop)
 		currentScreenRow := min(max(r.hardwareCursorRow-r.previousViewportTop, 0), height-1)
 		clearScreenRow := clearStart - r.previousViewportTop
 		var clear strings.Builder
@@ -77,6 +85,38 @@ func (r *mainScreenRenderer) renderSized(lines []string, cursorRow, cursorCol, w
 		if _, err := io.WriteString(r.out, clear.String()); err != nil {
 			return err
 		}
+	}
+
+	if !replay && len(lines) > len(r.previousLines) && len(lines)-1 > r.viewportBottom() {
+		var b strings.Builder
+		b.WriteString("\x1b[?2026h")
+		paintStart := firstChanged
+		transcriptEnd := liveStart - 1
+		if paintStart <= transcriptEnd {
+			writeVerticalMove(&b, paintStart-r.hardwareCursorRow)
+			b.WriteString("\r")
+			for line := paintStart; line <= transcriptEnd; line++ {
+				if line > paintStart {
+					b.WriteString("\r\n")
+				}
+				b.WriteString(lines[line])
+			}
+		}
+		naturalScroll := max(0, transcriptEnd-r.viewportBottom())
+		remainingScroll := newViewportTop - r.previousViewportTop - naturalScroll
+		if remainingScroll > 0 {
+			fmt.Fprintf(&b, "\x1b[%dS", remainingScroll)
+		}
+		for line := max(liveStart, newViewportTop); line < len(lines); line++ {
+			fmt.Fprintf(&b, "\x1b[%d;1H\x1b[2K", line-newViewportTop+1)
+			b.WriteString(lines[line])
+		}
+		fmt.Fprintf(&b, "\x1b[%d;%dH\x1b[?25h\x1b[?2026l", cursorRow-newViewportTop+1, cursorCol+1)
+		if _, err := io.WriteString(r.out, b.String()); err != nil {
+			return err
+		}
+		r.commit(lines, cursorRow, liveStart, width, height, newViewportTop)
+		return nil
 	}
 
 	var b strings.Builder
@@ -138,7 +178,7 @@ func (r *mainScreenRenderer) renderSized(lines []string, cursorRow, cursorCol, w
 	if _, err := io.WriteString(r.out, b.String()); err != nil {
 		return err
 	}
-	r.commit(lines, cursorRow, width, height, viewportTop)
+	r.commit(lines, cursorRow, liveStart, width, height, viewportTop)
 	return nil
 }
 
@@ -185,12 +225,13 @@ func writeVerticalMove(b *strings.Builder, rows int) {
 	}
 }
 
-func (r *mainScreenRenderer) commit(lines []string, cursorRow, width, height, viewportTop int) {
+func (r *mainScreenRenderer) commit(lines []string, cursorRow, liveStart, width, height, viewportTop int) {
 	r.previousLines = append(r.previousLines[:0], lines...)
 	r.width = width
 	r.height = height
 	r.previousViewportTop = viewportTop
 	r.hardwareCursorRow = cursorRow
+	r.previousLiveStart = liveStart
 	r.forceReplay = false
 }
 

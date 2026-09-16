@@ -89,6 +89,7 @@ type fnUI struct {
 	streamingRenderedWidth int
 	streamingRenderedLines []string
 	frameLines             []string
+	liveStart              int
 	reasoningText          strings.Builder
 	responding             bool
 	spinnerFrame           int
@@ -947,7 +948,7 @@ func Run(modelName, reasoningEffort, sessionID, cwd string, conversation []agent
 		now := time.Now()
 		if dirty && (urgentRender || lastRender.IsZero() || now.Sub(lastRender) >= backgroundRenderInterval) {
 			lines, cr, cc := root.render(w, h)
-			if err := renderer.render(lines, cr, cc); err != nil {
+			if err := renderer.renderWithLiveStart(lines, cr, cc, root.liveStart); err != nil {
 				return err
 			}
 			dirty, urgentRender = false, false

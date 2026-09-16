@@ -57,6 +57,31 @@ func TestMainScreenRendererCommitsEraseBeforeScrolling(t *testing.T) {
 	}
 }
 
+func TestMainScreenRendererKeepsLivePanelOutOfScrollback(t *testing.T) {
+	var out bytes.Buffer
+	r := newMainScreenRenderer(&out, 80, 4)
+	if err := r.renderWithLiveStart([]string{"transcript", "working", "box", "footer"}, 2, 0, 1); err != nil {
+		t.Fatal(err)
+	}
+
+	out.Reset()
+	lines := []string{"transcript", "new output", "working", "box", "footer"}
+	if err := r.renderWithLiveStart(lines, 3, 0, 2); err != nil {
+		t.Fatal(err)
+	}
+
+	output := out.String()
+	scroll := strings.Index(output, "\x1b[1S")
+	if scroll < 0 {
+		t.Fatalf("output did not scroll: %q", output)
+	}
+	for _, liveLine := range lines[2:] {
+		if strings.Contains(output[:scroll], liveLine) {
+			t.Fatalf("live line %q was written before the transcript scrolled: %q", liveLine, output)
+		}
+	}
+}
+
 func TestMainScreenRendererMovesCursorWithoutRepainting(t *testing.T) {
 	var out bytes.Buffer
 	r := newMainScreenRenderer(&out, 80, 5)
