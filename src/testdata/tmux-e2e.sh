@@ -28,20 +28,26 @@ wait_for() {
 wait_for '│ STARTUP-DRAFT'
 "${tmux[@]}" send-keys -t "$session" Escape
 
-# Stream past the viewport and verify both ends reached native tmux history.
+# Stream in a short pane so transcript growth reaches native tmux history.
+"${tmux[@]}" resize-pane -t "$session" -y 12
 "${tmux[@]}" send-keys -t "$session" -l stream
 "${tmux[@]}" send-keys -t "$session" Enter
 wait_for '321 context'
 all=$(capture)
 grep -q 'STREAM-LINE-01' <<<"$all"
 grep -q 'STREAM-LINE-32' <<<"$all"
-# The live status and editor must not be pushed into tmux scrollback while the
-# transcript grows. Only the currently visible empty editor may remain.
-if [[ $(rg -c '^│ Type a message…' <<<"$all") -ne 1 ]] || rg -q '^⠋ Working…' <<<"$all"; then
+
+# No frame of the live status/editor/footer may be preserved in scrollback.
+if rg -q '^[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏] Working…' <<<"$all" ||
+  [[ $(rg -c '^╭─+╮$' <<<"$all") -ne 1 ]] ||
+  [[ $(rg -c '^╰─+╯$' <<<"$all") -ne 1 ]] ||
+  [[ $(rg -c '^│ Type a message…' <<<"$all") -ne 1 ]] ||
+  [[ $(rg -c '^tmux-e2e ' <<<"$all") -ne 1 ]]; then
   echo 'live UI leaked into tmux scrollback' >&2
   printf '%s\n' "$all" >&2
   exit 1
 fi
+"${tmux[@]}" resize-pane -t "$session" -y 40
 
 # Recall wrapped entries, including one taller than the terminal, without
 # replaying the transcript or clearing native scrollback.

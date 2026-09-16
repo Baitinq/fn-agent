@@ -18,6 +18,28 @@ func historyFrame(inputLines int) []string {
 	return append(lines, "footer")
 }
 
+func TestMainScreenRendererCommitsEraseBeforeScrolling(t *testing.T) {
+	var out bytes.Buffer
+	r := newMainScreenRenderer(&out, 80, 5)
+	oldLines := []string{"working", "box top", "box middle", "box bottom", "footer"}
+	if err := r.render(oldLines, 2, 0); err != nil {
+		t.Fatal(err)
+	}
+
+	out.Reset()
+	newLines := append([]string{"reasoning"}, oldLines...)
+	if err := r.render(newLines, 3, 0); err != nil {
+		t.Fatal(err)
+	}
+
+	output := out.String()
+	firstEnd := strings.Index(output, "\x1b[?2026l")
+	secondStart := strings.LastIndex(output, "\x1b[?2026h")
+	if !strings.Contains(output[:firstEnd], "\r\x1b[J") || secondStart <= firstEnd {
+		t.Fatalf("erase was not committed before scrolling repaint: %q", output)
+	}
+}
+
 func TestMainScreenRendererMovesCursorWithoutRepainting(t *testing.T) {
 	var out bytes.Buffer
 	r := newMainScreenRenderer(&out, 80, 5)

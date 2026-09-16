@@ -64,6 +64,20 @@ func (r *mainScreenRenderer) renderSized(lines []string, cursorRow, cursorCol, w
 
 	newViewportTop := max(0, len(lines)-height)
 	replay := resized || len(r.previousLines) == 0 || newViewportTop < r.previousViewportTop
+	if !replay && len(lines) > len(r.previousLines) && firstChanged <= r.viewportBottom() && len(lines)-1 > r.viewportBottom() {
+		clearStart := max(firstChanged, r.previousViewportTop)
+		currentScreenRow := min(max(r.hardwareCursorRow-r.previousViewportTop, 0), height-1)
+		clearScreenRow := clearStart - r.previousViewportTop
+		var clear strings.Builder
+		clear.WriteString("\x1b[?2026h")
+		writeVerticalMove(&clear, clearScreenRow-currentScreenRow)
+		clear.WriteString("\r\x1b[J")
+		writeVerticalMove(&clear, currentScreenRow-clearScreenRow)
+		clear.WriteString("\x1b[?2026l")
+		if _, err := io.WriteString(r.out, clear.String()); err != nil {
+			return err
+		}
+	}
 
 	var b strings.Builder
 	b.WriteString("\x1b[?2026h")
