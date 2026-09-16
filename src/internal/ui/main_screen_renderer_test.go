@@ -18,6 +18,23 @@ func historyFrame(inputLines int) []string {
 	return append(lines, "footer")
 }
 
+func TestMainScreenRendererWritesEntireInitialTranscript(t *testing.T) {
+	var out bytes.Buffer
+	r := newMainScreenRenderer(&out, 80, 3)
+	lines := []string{"oldest", "older", "recent", "editor", "footer"}
+
+	if err := r.render(lines, 3, 0); err != nil {
+		t.Fatal(err)
+	}
+
+	output := out.String()
+	for _, line := range lines {
+		if !strings.Contains(output, line) {
+			t.Fatalf("initial render omitted %q: %q", line, output)
+		}
+	}
+}
+
 func TestMainScreenRendererCommitsEraseBeforeScrolling(t *testing.T) {
 	var out bytes.Buffer
 	r := newMainScreenRenderer(&out, 80, 5)

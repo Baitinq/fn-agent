@@ -86,6 +86,7 @@ func (r *mainScreenRenderer) renderSized(lines []string, cursorRow, cursorCol, w
 	if replay {
 		paintStart = newViewportTop
 		if len(r.previousLines) == 0 && !resized {
+			paintStart = 0
 			b.WriteString("\r\x1b[2K")
 		} else {
 			b.WriteString("\x1b[2J\x1b[H")
