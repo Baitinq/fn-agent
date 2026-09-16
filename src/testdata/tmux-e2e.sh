@@ -35,6 +35,13 @@ wait_for '321 context'
 all=$(capture)
 grep -q 'STREAM-LINE-01' <<<"$all"
 grep -q 'STREAM-LINE-32' <<<"$all"
+# The live status and editor must not be pushed into tmux scrollback while the
+# transcript grows. Only the currently visible empty editor may remain.
+if [[ $(rg -c '^│ Type a message…' <<<"$all") -ne 1 ]] || rg -q '^⠋ Working…' <<<"$all"; then
+  echo 'live UI leaked into tmux scrollback' >&2
+  printf '%s\n' "$all" >&2
+  exit 1
+fi
 
 # Recall wrapped entries, including one taller than the terminal, without
 # replaying the transcript or clearing native scrollback.

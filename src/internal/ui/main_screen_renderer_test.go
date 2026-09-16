@@ -18,6 +18,22 @@ func historyFrame(inputLines int) []string {
 	return append(lines, "footer")
 }
 
+func TestMainScreenRendererMovesCursorWithoutRepainting(t *testing.T) {
+	var out bytes.Buffer
+	r := newMainScreenRenderer(&out, 80, 5)
+	if err := r.render([]string{"hello"}, 0, 5); err != nil {
+		t.Fatal(err)
+	}
+
+	out.Reset()
+	if err := r.render([]string{"hello"}, 0, 2); err != nil {
+		t.Fatal(err)
+	}
+	if got := out.String(); !strings.Contains(got, "\x1b[3G") || strings.Contains(got, "hello") {
+		t.Fatalf("cursor-only output = %q", got)
+	}
+}
+
 func TestMainScreenRendererShrinksAndGrowsWithinViewport(t *testing.T) {
 	var out bytes.Buffer
 	r := newMainScreenRenderer(&out, 80, 6)
@@ -40,6 +56,30 @@ func TestMainScreenRendererShrinksAndGrowsWithinViewport(t *testing.T) {
 	}
 }
 
+func TestMainScreenRendererClearsRowsBeforeScrollingThem(t *testing.T) {
+	var out bytes.Buffer
+	r := newMainScreenRenderer(&out, 80, 5)
+	oldLines := []string{"working", "box top", "box middle", "box bottom", "footer"}
+	if err := r.render(oldLines, 2, 0); err != nil {
+		t.Fatal(err)
+	}
+
+	out.Reset()
+	newLines := append([]string{"reasoning"}, oldLines...)
+	if err := r.render(newLines, 3, 0); err != nil {
+		t.Fatal(err)
+	}
+
+	output := out.String()
+	firstPaint := strings.Index(output, "reasoning")
+	if firstPaint < 0 {
+		t.Fatalf("did not paint new line: %q", output)
+	}
+	if !strings.Contains(output[:firstPaint], "\r\x1b[J") {
+		t.Fatalf("did not erase the old viewport before first paint: %q", output)
+	}
+}
+
 func TestMainScreenRendererErasesRemovedRows(t *testing.T) {
 	for _, suffix := range [][]string{{"removed", "removed"}, {"", ""}} {
 		t.Run(fmt.Sprintf("suffix=%q", suffix), func(t *testing.T) {
@@ -53,8 +93,8 @@ func TestMainScreenRendererErasesRemovedRows(t *testing.T) {
 			if err := r.render(lines, 1, 2); err != nil {
 				t.Fatal(err)
 			}
-			if got := strings.Count(out.String(), "\x1b[2K"); got != len(suffix) {
-				t.Fatalf("cleared %d rows, want %d: %q", got, len(suffix), out.String())
+			if !strings.Contains(out.String(), "\x1b[J") {
+				t.Fatalf("did not erase removed rows: %q", out.String())
 			}
 			if strings.Contains(out.String(), "history") || strings.Contains(out.String(), "\x1b[2J") || strings.Contains(out.String(), "\x1b[3J") {
 				t.Fatalf("replayed history: %q", out.String())

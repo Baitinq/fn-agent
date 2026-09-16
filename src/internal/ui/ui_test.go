@@ -937,8 +937,8 @@ func TestMainScreenRendererResizeUsesPiStyleReplay(t *testing.T) {
 	if err := r.render([]string{"history", "input"}, 1, 0); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out.String(), "\x1b[2J\x1b[H\x1b[3J") {
-		t.Fatalf("resize did not fully replay: %q", out.String())
+	if !strings.Contains(out.String(), "\x1b[2J\x1b[H") || strings.Contains(out.String(), "\x1b[3J") {
+		t.Fatalf("resize did not replay without clearing scrollback: %q", out.String())
 	}
 }
 

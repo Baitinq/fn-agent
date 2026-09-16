@@ -5,22 +5,19 @@ import (
 	"io"
 	"strings"
 
-	tui "github.com/grindlemire/go-tui"
+	"github.com/charmbracelet/x/ansi"
 )
 
-// mainScreenRenderer is a small Go port of Pi's main-screen renderer. Logical
-// lines grow into native terminal history; only addressable changed lines are
-// rewritten. Changes entirely above the viewport are retained for the next
-// replay instead of clearing the visible screen.
 type mainScreenRenderer struct {
-	out                 io.Writer
-	width, height       int
+	out io.Writer
+
+	width  int
+	height int
+
 	previousLines       []string
-	previousWidth       int
-	previousHeight      int
-	cursorRow           int
-	hardwareCursorRow   int
 	previousViewportTop int
+	hardwareCursorRow   int
+	forceReplay         bool
 }
 
 func newMainScreenRenderer(out io.Writer, width, height int) *mainScreenRenderer {
@@ -28,194 +25,158 @@ func newMainScreenRenderer(out io.Writer, width, height int) *mainScreenRenderer
 }
 
 func (r *mainScreenRenderer) resize(width, height int) {
-	r.width, r.height = max(width, 1), max(height, 1)
+	width, height = max(width, 1), max(height, 1)
+	r.forceReplay = width != r.width || height != r.height
+	r.width, r.height = width, height
 }
 
 func (r *mainScreenRenderer) render(lines []string, cursorRow, cursorCol int) error {
-	width, height := max(r.width, 1), max(r.height, 1)
-	validateLines := func(start, end int) error {
-		for i := start; i < end; i++ {
-			if w := lineWidth(lines[i]); w > width {
-				return fmt.Errorf("rendered line %d exceeds terminal width (%d > %d)", i, w, width)
-			}
-		}
+	return r.renderSized(lines, cursorRow, cursorCol, r.width, r.height)
+}
+
+func (r *mainScreenRenderer) renderSized(lines []string, cursorRow, cursorCol, width, height int) error {
+	if len(lines) == 0 || width <= 0 || height <= 0 {
 		return nil
 	}
-	widthChanged := r.previousWidth != 0 && r.previousWidth != width
-	heightChanged := r.previousHeight != 0 && r.previousHeight != height
-	previousBufferLength := height
-	if r.previousHeight > 0 {
-		previousBufferLength = r.previousViewportTop + r.previousHeight
-	}
-	prevViewportTop := r.previousViewportTop
-	if heightChanged {
-		prevViewportTop = max(0, previousBufferLength-height)
-	}
 
-	fullRender := func(clear bool) error {
+	resized := r.forceReplay || width != r.width || height != r.height
+	firstChanged := r.firstChangedLine(lines)
+	lastChanged := r.lastChangedLine(lines)
+	if !resized && firstChanged < 0 {
 		var b strings.Builder
 		b.WriteString("\x1b[?2026h")
-		if len(r.previousLines) == 0 {
-			// Input can be echoed before raw mode is established. The first
-			// frame owns the current line, so clear that echo without touching
-			// the shell output and scrollback above it.
-			b.WriteString("\r\x1b[2K")
-		}
-		if clear {
-			b.WriteString("\x1b[2J\x1b[H\x1b[3J")
-		}
-		for i, line := range lines {
-			if i > 0 {
-				b.WriteString("\r\n")
-			}
-			b.WriteString(line)
-		}
-		b.WriteString("\x1b[?2026l")
+		writeVerticalMove(&b, cursorRow-r.hardwareCursorRow)
+		fmt.Fprintf(&b, "\x1b[%dG\x1b[?25h\x1b[?2026l", cursorCol+1)
 		if _, err := io.WriteString(r.out, b.String()); err != nil {
 			return err
 		}
-		r.cursorRow = max(0, len(lines)-1)
-		r.hardwareCursorRow = r.cursorRow
-		r.previousViewportTop = max(0, max(height, len(lines))-height)
-		r.commit(lines, width, height)
-		return r.positionCursor(cursorRow, cursorCol, len(lines))
+		r.commit(lines, cursorRow, width, height, r.previousViewportTop)
+		return nil
 	}
 
-	if len(r.previousLines) == 0 && !widthChanged && !heightChanged {
-		if err := validateLines(0, len(lines)); err != nil {
-			return err
-		}
-		return fullRender(false)
+	validateFrom := firstChanged
+	if resized {
+		validateFrom = max(0, len(lines)-height)
 	}
-	if widthChanged || heightChanged {
-		if err := validateLines(0, len(lines)); err != nil {
-			return err
-		}
-		return fullRender(true)
-	}
-
-	firstChanged, lastChanged := -1, -1
-	for i := prevViewportTop; i < max(len(lines), len(r.previousLines)); i++ {
-		oldLine, newLine := "", ""
-		if i < len(r.previousLines) {
-			oldLine = r.previousLines[i]
-		}
-		if i < len(lines) {
-			newLine = lines[i]
-		}
-		if oldLine != newLine {
-			if firstChanged < 0 {
-				firstChanged = i
-			}
-			lastChanged = i
-		}
-	}
-	shrinking := len(lines) < len(r.previousLines)
-	if shrinking {
-		if firstChanged < 0 {
-			firstChanged = len(lines)
-		}
-		lastChanged = len(r.previousLines) - 1
-	}
-	if firstChanged < 0 {
-		r.previousViewportTop = prevViewportTop
-		r.commit(lines, width, height)
-		return r.positionCursor(cursorRow, cursorCol, len(lines))
-	}
-	reanchor := shrinking && max(0, len(lines)-height) < prevViewportTop
-	if reanchor {
-		// The input moved above the addressable screen. Repaint only the
-		// visible tail, leaving terminal scrollback intact.
-		prevViewportTop = max(0, len(lines)-height)
-		firstChanged = prevViewportTop
-		lastChanged = len(lines) - 1
-	}
-	if err := validateLines(firstChanged, min(lastChanged+1, len(lines))); err != nil {
+	if err := validateLines(lines, validateFrom, width); err != nil {
 		return err
 	}
 
-	appendStart := len(lines) > len(r.previousLines) && firstChanged == len(r.previousLines) && firstChanged > 0
-	viewportTop := prevViewportTop
-	hardwareRow := r.hardwareCursorRow
-	viewportBottom := prevViewportTop + height - 1
-	moveTarget := firstChanged
-	if appendStart {
-		moveTarget--
-	}
+	newViewportTop := max(0, len(lines)-height)
+	replay := resized || len(r.previousLines) == 0 || newViewportTop < r.previousViewportTop
 
 	var b strings.Builder
 	b.WriteString("\x1b[?2026h")
-	if reanchor {
-		b.WriteString("\x1b[2J\x1b[H")
-		hardwareRow = prevViewportTop
-	}
-	if moveTarget > viewportBottom {
-		currentScreenRow := min(max(hardwareRow-prevViewportTop, 0), height-1)
-		if n := height - 1 - currentScreenRow; n > 0 {
-			fmt.Fprintf(&b, "\x1b[%dB", n)
+	paintStart := firstChanged
+	paintEnd := len(lines) - 1
+	if replay {
+		paintStart = newViewportTop
+		if len(r.previousLines) == 0 && !resized {
+			b.WriteString("\r\x1b[2K")
+		} else {
+			b.WriteString("\x1b[2J\x1b[H")
 		}
-		n := moveTarget - viewportBottom
-		b.WriteString(strings.Repeat("\r\n", n))
-		prevViewportTop += n
-		viewportTop += n
-		hardwareRow = moveTarget
-	}
-	currentScreenRow := hardwareRow - prevViewportTop
-	targetScreenRow := moveTarget - viewportTop
-	if d := targetScreenRow - currentScreenRow; d > 0 {
-		fmt.Fprintf(&b, "\x1b[%dB", d)
-	} else if d < 0 {
-		fmt.Fprintf(&b, "\x1b[%dA", -d)
-	}
-	if appendStart {
+	} else if len(lines) == len(r.previousLines) {
+		paintEnd = lastChanged
+		writeVerticalMove(&b, paintStart-r.hardwareCursorRow)
+		for i := paintStart; i <= paintEnd; i++ {
+			if i > paintStart {
+				b.WriteString("\x1b[1B")
+			}
+			b.WriteString("\r\x1b[2K")
+			b.WriteString(lines[i])
+		}
+	} else if paintStart > r.viewportBottom() {
+		lastRow := paintStart - 1
+		writeVerticalMove(&b, lastRow-r.hardwareCursorRow)
 		b.WriteString("\r\n")
 	} else {
-		b.WriteByte('\r')
+		writeVerticalMove(&b, paintStart-r.hardwareCursorRow)
+		b.WriteString("\r\x1b[J")
 	}
 
-	for i := firstChanged; i <= lastChanged; i++ {
-		if i > firstChanged {
-			b.WriteString("\r\n")
-		}
-		b.WriteString("\x1b[2K")
-		if i < len(lines) {
+	if replay || len(lines) != len(r.previousLines) {
+		for i := paintStart; i < len(lines); i++ {
+			if i > paintStart {
+				b.WriteString("\r\n")
+			}
 			b.WriteString(lines[i])
 		}
 	}
+
+	if paintStart >= len(lines) {
+		paintEnd = paintStart
+	}
+	viewportTop := newViewportTop
+	if !replay {
+		viewportTop = max(r.previousViewportTop, newViewportTop)
+	}
+	writeVerticalMove(&b, cursorRow-paintEnd)
+	fmt.Fprintf(&b, "\x1b[%dG", cursorCol+1)
+	if cursorRow < 0 {
+		b.WriteString("\x1b[?25l")
+	} else {
+		b.WriteString("\x1b[?25h")
+	}
 	b.WriteString("\x1b[?2026l")
+
 	if _, err := io.WriteString(r.out, b.String()); err != nil {
 		return err
 	}
-
-	r.cursorRow = max(0, len(lines)-1)
-	r.hardwareCursorRow = lastChanged
-	r.previousViewportTop = max(prevViewportTop, lastChanged-height+1)
-	r.commit(lines, width, height)
-	return r.positionCursor(cursorRow, cursorCol, len(lines))
+	r.commit(lines, cursorRow, width, height, viewportTop)
+	return nil
 }
 
-func (r *mainScreenRenderer) commit(lines []string, width, height int) {
+func (r *mainScreenRenderer) firstChangedLine(lines []string) int {
+	limit := min(len(lines), len(r.previousLines))
+	for i := min(r.previousViewportTop, limit); i < limit; i++ {
+		if lines[i] != r.previousLines[i] {
+			return i
+		}
+	}
+	if len(lines) != len(r.previousLines) {
+		return limit
+	}
+	return -1
+}
+
+func (r *mainScreenRenderer) lastChangedLine(lines []string) int {
+	for i := min(len(lines), len(r.previousLines)) - 1; i >= 0; i-- {
+		if lines[i] != r.previousLines[i] {
+			return i
+		}
+	}
+	return max(len(lines), len(r.previousLines)) - 1
+}
+
+func (r *mainScreenRenderer) viewportBottom() int {
+	return r.previousViewportTop + r.height - 1
+}
+
+func validateLines(lines []string, start, width int) error {
+	for i := start; i < len(lines); i++ {
+		if lineWidth(lines[i]) > width {
+			return fmt.Errorf("rendered line %d is wider than the terminal (%d > %d)", i, lineWidth(lines[i]), width)
+		}
+	}
+	return nil
+}
+
+func writeVerticalMove(b *strings.Builder, rows int) {
+	if rows > 0 {
+		fmt.Fprintf(b, "\x1b[%dB", rows)
+	} else if rows < 0 {
+		fmt.Fprintf(b, "\x1b[%dA", -rows)
+	}
+}
+
+func (r *mainScreenRenderer) commit(lines []string, cursorRow, width, height, viewportTop int) {
 	r.previousLines = append(r.previousLines[:0], lines...)
-	r.previousWidth, r.previousHeight = width, height
-}
-
-func (r *mainScreenRenderer) positionCursor(row, col, total int) error {
-	if total == 0 || row < 0 {
-		_, err := io.WriteString(r.out, "\x1b[?25l")
-		return err
-	}
-	row = min(max(row, 0), total-1)
-	col = max(col, 0)
-	var b strings.Builder
-	if d := row - r.hardwareCursorRow; d > 0 {
-		fmt.Fprintf(&b, "\x1b[%dB", d)
-	} else if d < 0 {
-		fmt.Fprintf(&b, "\x1b[%dA", -d)
-	}
-	fmt.Fprintf(&b, "\x1b[%dG\x1b[?25h", col+1)
-	_, err := io.WriteString(r.out, b.String())
-	r.hardwareCursorRow = row
-	return err
+	r.width = width
+	r.height = height
+	r.previousViewportTop = viewportTop
+	r.hardwareCursorRow = cursorRow
+	r.forceReplay = false
 }
 
 func (r *mainScreenRenderer) stop() error {
@@ -223,18 +184,13 @@ func (r *mainScreenRenderer) stop() error {
 		return nil
 	}
 	var b strings.Builder
-	target := len(r.previousLines)
-	if d := target - r.hardwareCursorRow; d > 0 {
-		fmt.Fprintf(&b, "\x1b[%dB", d)
-	} else if d < 0 {
-		fmt.Fprintf(&b, "\x1b[%dA", -d)
-	}
+	writeVerticalMove(&b, len(r.previousLines)-1-r.hardwareCursorRow)
 	b.WriteString("\r\n\x1b[0m\x1b[?25h")
 	_, err := io.WriteString(r.out, b.String())
 	return err
 }
 
-func lineWidth(s string) int { return tui.StringWidth(stripANSI(s)) }
+func lineWidth(s string) int { return ansi.StringWidth(stripANSI(s)) }
 
 func sanitizeTerminalText(s string) string {
 	s = stripANSI(s)
