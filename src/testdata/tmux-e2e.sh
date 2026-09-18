@@ -21,6 +21,11 @@ go test -c -o "$binary" ./internal/ui
 
 capture() { "${tmux[@]}" capture-pane -p -t "$session" -S -; }
 capture_visible() { "${tmux[@]}" capture-pane -p -t "$session"; }
+capture_history() {
+  local size
+  size=$("${tmux[@]}" display-message -p -t "$session" '#{history_size}')
+  ((size > 0)) && "${tmux[@]}" capture-pane -p -t "$session" -S "-$size" -E -1
+}
 wait_until_idle() {
   for _ in $(seq 1 200); do capture_visible | grep -q 'Type a message' && return 0; sleep .05; done
   echo 'timed out waiting for idle editor' >&2; capture_visible >&2; return 1
@@ -244,6 +249,16 @@ all=$(capture)
 [[ $(grep -c 'STREAM-LINE-01' <<<"$all") -eq 3 ]]
 [[ $(grep -c 'STREAM-LINE-32' <<<"$all") -eq 3 ]]
 grep -q 'Canceled' <<<"$all"
+if capture_history | grep -q 'Type a message'; then
+  echo 'resize preserved the input bar in tmux scrollback' >&2
+  capture_history >&2
+  exit 1
+fi
+if capture_history | rg -q '^[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏] Working…|^╭─+╮$|^╰─+╯$|^tmux-e2e '; then
+  echo 'resize preserved live UI in tmux scrollback' >&2
+  capture_history >&2
+  exit 1
+fi
 "${tmux[@]}" resize-window -t "$session" -x 72 -y 24
 sleep .2
 

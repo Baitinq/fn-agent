@@ -78,9 +78,8 @@ func (r *mainScreenRenderer) renderSized(lines []string, cursorRow, cursorCol, l
 		clearScreenRow := clearStart - r.previousViewportTop
 		var clear strings.Builder
 		clear.WriteString("\x1b[?2026h")
-		writeVerticalMove(&clear, clearScreenRow-currentScreenRow)
-		clear.WriteString("\r\x1b[J")
-		writeVerticalMove(&clear, currentScreenRow-clearScreenRow)
+		eraseScreenFrom(&clear, clearScreenRow, height)
+		fmt.Fprintf(&clear, "\x1b[%d;1H", currentScreenRow+1)
 		clear.WriteString("\x1b[?2026l")
 		if _, err := io.WriteString(r.out, clear.String()); err != nil {
 			return err
@@ -129,7 +128,7 @@ func (r *mainScreenRenderer) renderSized(lines []string, cursorRow, cursorCol, l
 			paintStart = 0
 			b.WriteString("\r\x1b[2K")
 		} else {
-			b.WriteString("\x1b[2J\x1b[H")
+			eraseScreenFrom(&b, 0, height)
 		}
 	} else if len(lines) == len(r.previousLines) {
 		paintEnd = lastChanged
@@ -146,8 +145,7 @@ func (r *mainScreenRenderer) renderSized(lines []string, cursorRow, cursorCol, l
 		writeVerticalMove(&b, lastRow-r.hardwareCursorRow)
 		b.WriteString("\r\n")
 	} else {
-		writeVerticalMove(&b, paintStart-r.hardwareCursorRow)
-		b.WriteString("\r\x1b[J")
+		eraseScreenFrom(&b, paintStart-r.previousViewportTop, height)
 	}
 
 	if replay || len(lines) != len(r.previousLines) {
@@ -215,6 +213,19 @@ func validateLines(lines []string, start, width int) error {
 		}
 	}
 	return nil
+}
+
+// eraseScreenFrom clears lines individually because tmux can preserve lines
+// erased with ED (CSI J) in scrollback.
+func eraseScreenFrom(b *strings.Builder, row, height int) {
+	fmt.Fprintf(b, "\x1b[%d;1H", row+1)
+	for current := row; current < height; current++ {
+		b.WriteString("\x1b[2K")
+		if current+1 < height {
+			b.WriteString("\x1b[B")
+		}
+	}
+	fmt.Fprintf(b, "\x1b[%d;1H", row+1)
 }
 
 func writeVerticalMove(b *strings.Builder, rows int) {

@@ -52,7 +52,7 @@ func TestMainScreenRendererCommitsEraseBeforeScrolling(t *testing.T) {
 	output := out.String()
 	firstEnd := strings.Index(output, "\x1b[?2026l")
 	secondStart := strings.LastIndex(output, "\x1b[?2026h")
-	if !strings.Contains(output[:firstEnd], "\r\x1b[J") || secondStart <= firstEnd {
+	if !strings.Contains(output[:firstEnd], "\x1b[2K") || secondStart <= firstEnd {
 		t.Fatalf("erase was not committed before scrolling repaint: %q", output)
 	}
 }
@@ -139,7 +139,7 @@ func TestMainScreenRendererClearsRowsBeforeScrollingThem(t *testing.T) {
 	if firstPaint < 0 {
 		t.Fatalf("did not paint new line: %q", output)
 	}
-	if !strings.Contains(output[:firstPaint], "\r\x1b[J") {
+	if !strings.Contains(output[:firstPaint], "\x1b[2K") {
 		t.Fatalf("did not erase the old viewport before first paint: %q", output)
 	}
 }
@@ -157,7 +157,7 @@ func TestMainScreenRendererErasesRemovedRows(t *testing.T) {
 			if err := r.render(lines, 1, 2); err != nil {
 				t.Fatal(err)
 			}
-			if !strings.Contains(out.String(), "\x1b[J") {
+			if !strings.Contains(out.String(), "\x1b[2K") {
 				t.Fatalf("did not erase removed rows: %q", out.String())
 			}
 			if strings.Contains(out.String(), "history") || strings.Contains(out.String(), "\x1b[2J") || strings.Contains(out.String(), "\x1b[3J") {
@@ -188,7 +188,7 @@ func TestMainScreenRendererShrinksOversizedInput(t *testing.T) {
 				t.Fatalf("replayed scrollback: %q", out.String())
 			}
 			wantTop := len(lines) - 6
-			if !strings.Contains(out.String(), "\x1b[2J") {
+			if !strings.Contains(out.String(), "\x1b[2K") {
 				t.Fatalf("shrinking input did not reanchor viewport: %q", out.String())
 			}
 			if inputLines == 2 && !strings.Contains(out.String(), "history-09") {

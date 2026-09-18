@@ -926,7 +926,7 @@ func TestMainScreenRendererUpdatesViewportWithoutReplayingOffscreenChanges(t *te
 	}
 }
 
-func TestMainScreenRendererResizeUsesPiStyleReplay(t *testing.T) {
+func TestMainScreenRendererResizeReplaysWithoutEraseDisplay(t *testing.T) {
 	var out strings.Builder
 	r := newMainScreenRenderer(&out, 20, 4)
 	if err := r.render([]string{"history", "input"}, 1, 0); err != nil {
@@ -937,8 +937,8 @@ func TestMainScreenRendererResizeUsesPiStyleReplay(t *testing.T) {
 	if err := r.render([]string{"history", "input"}, 1, 0); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out.String(), "\x1b[2J\x1b[H") || strings.Contains(out.String(), "\x1b[3J") {
-		t.Fatalf("resize did not replay without clearing scrollback: %q", out.String())
+	if !strings.Contains(out.String(), "\x1b[2K") || strings.Contains(out.String(), "\x1b[J") || strings.Contains(out.String(), "\x1b[2J") || strings.Contains(out.String(), "\x1b[3J") {
+		t.Fatalf("resize used erase-display or did not erase visible rows: %q", out.String())
 	}
 }
 
