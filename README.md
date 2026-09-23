@@ -68,7 +68,7 @@ Set `OPENAI_API_KEY`, `GEMINI_API_KEY`, or `ANTHROPIC_API_KEY` for the correspon
 | --- | --- |
 | `FN_PROVIDER` | `openai` (`openai`, `openai-completions`, `gemini`, or `anthropic`) |
 | `FN_BASE_URL` | provider API URL |
-| `FN_MODEL` | `gpt-5.6-sol` |
+| `FN_MODEL` | `gpt-6-sol` |
 | `FN_REASONING_EFFORT` | `medium` |
 
 When a model rejects a request because its context limit was reached, fn agent
