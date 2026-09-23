@@ -15,7 +15,7 @@ import (
 type anthropicContent struct {
 	Type      string          `json:"type"`
 	Text      string          `json:"text,omitempty"`
-	Thinking  string          `json:"thinking,omitempty"`
+	Thinking  *string         `json:"thinking,omitempty"`
 	Signature string          `json:"signature,omitempty"`
 	ID        string          `json:"id,omitempty"`
 	Name      string          `json:"name,omitempty"`
@@ -99,7 +99,7 @@ func anthropicMessages(history []historyItem, model string) []anthropicMessage {
 			if sameModel && item.RedactedThinking != "" {
 				appendContent("assistant", anthropicContent{Type: "redacted_thinking", Data: item.RedactedThinking})
 			} else if sameModel && item.ThoughtSignature != "" {
-				appendContent("assistant", anthropicContent{Type: "thinking", Thinking: item.Text, Signature: item.ThoughtSignature})
+				appendContent("assistant", anthropicContent{Type: "thinking", Thinking: &item.Text, Signature: item.ThoughtSignature})
 			} else if item.Text != "" {
 				appendContent("assistant", anthropicContent{Type: "text", Text: item.Text})
 			}
@@ -244,7 +244,7 @@ func (a *Agent) streamAnthropic(ctx context.Context, request modelRequest, emit 
 			case "text":
 				item.Type, item.Role, item.Text = "message", "assistant", block.Text
 			case "thinking":
-				item.Type, item.Text, item.ThoughtSignature = "reasoning", block.Thinking, block.Signature
+				item.Type, item.Text, item.ThoughtSignature = "reasoning", *block.Thinking, block.Signature
 			case "redacted_thinking":
 				item.Type, item.RedactedThinking = "reasoning", block.Data
 			case "tool_use":
