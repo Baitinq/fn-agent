@@ -179,6 +179,7 @@ const (
 	ToolEventTextDelta
 	ToolEventCall
 	ToolEventUpdate
+	ToolEventProgress
 	ToolEventResult
 	ToolEventError
 )
@@ -318,62 +319,6 @@ func New() (*Agent, error) {
 		return nil, err
 	}
 	return a, nil
-}
-
-const (
-	maxToolOutputLines = 2000
-	maxToolOutputBytes = 50 * 1024
-)
-
-func toolOutputLineCount(output string) int {
-	if output == "" {
-		return 0
-	}
-	lines := strings.Count(output, "\n") + 1
-	if strings.HasSuffix(output, "\n") {
-		lines--
-	}
-	return lines
-}
-
-func tailBytesUTF8(output string, limit int) string {
-	if len(output) <= limit {
-		return output
-	}
-	start := len(output) - limit
-	for start < len(output) && output[start]&0xc0 == 0x80 {
-		start++
-	}
-	return output[start:]
-}
-
-// limitToolOutput keeps the last 2,000 lines or 50KB, whichever is reached
-// first. Large results should be assigned to a persistent Python variable when
-// the complete output needs further inspection.
-func limitToolOutput(output string) string {
-	totalLines, totalBytes := toolOutputLineCount(output), len(output)
-	if totalLines <= maxToolOutputLines && totalBytes <= maxToolOutputBytes {
-		return output
-	}
-
-	limited := output
-	if totalLines > maxToolOutputLines {
-		lines := strings.Split(output, "\n")
-		trailingNewline := len(lines) > 0 && lines[len(lines)-1] == ""
-		if trailingNewline {
-			lines = lines[:len(lines)-1]
-		}
-		lines = lines[len(lines)-maxToolOutputLines:]
-		limited = strings.Join(lines, "\n")
-		if trailingNewline {
-			limited += "\n"
-		}
-	}
-	limited = tailBytesUTF8(limited, maxToolOutputBytes)
-
-	shownLines := toolOutputLineCount(limited)
-	footer := fmt.Sprintf("Tool output truncated: showing last %d of %d lines (%dKB limit). Assign large results to a Python variable and inspect them incrementally.", shownLines, totalLines, maxToolOutputBytes/1024)
-	return strings.TrimSuffix(limited, "\n") + "\n\n[" + footer + "]"
 }
 
 func (a *Agent) snapshotREPL() (string, error) {
@@ -596,6 +541,15 @@ func (a *Agent) streamResponse(ctx context.Context, params responses.ResponseNew
 
 const OmittedToolResult = "[tool output omitted after use]"
 
+const maxToolOutputBytes = 50 * 1024
+
+func limitToolOutput(output string) string {
+	if len(output) <= maxToolOutputBytes {
+		return output
+	}
+	return strings.ToValidUTF8(output[:maxToolOutputBytes], "") + fmt.Sprintf("\n[output truncated: %d more bytes omitted; store large results in variables instead of printing them]", len(output)-maxToolOutputBytes)
+}
+
 func (a *Agent) pruneToolResults() {
 	for i := range a.history {
 		if a.history[i].Type == "tool_result" {
@@ -768,7 +722,19 @@ func (a *Agent) Respond(msg string, steer <-chan string, emit func(ToolEvent), c
 					break
 				}
 				emit(ToolEvent{Kind: ToolEventCall, Name: call.Name, ID: call.CallID, Detail: args.Code})
-				result, replFailed, err := a.pythonREPL().execute(ctx, args.Code)
+				streamed := 0
+				result, replFailed, err := a.pythonREPL().executeStreaming(ctx, args.Code, func(chunk string, progress bool) {
+					if progress {
+						emit(ToolEvent{Kind: ToolEventProgress, Name: call.Name, ID: call.CallID, Detail: chunk})
+						return
+					}
+					chunk = chunk[:min(len(chunk), maxToolOutputBytes-streamed)]
+					if chunk == "" {
+						return
+					}
+					streamed += len(chunk)
+					emit(ToolEvent{Kind: ToolEventUpdate, Name: call.Name, ID: call.CallID, Detail: chunk})
+				})
 				emitREPLNotices()
 				failed = replFailed
 				if err != nil {

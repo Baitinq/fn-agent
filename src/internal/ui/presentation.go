@@ -414,22 +414,27 @@ func renderedToolMessage(msg message, width int, now time.Time) string {
 	}
 	if msg.toolResult != "" {
 		result := strings.TrimSuffix(sanitizeTerminalText(msg.toolResult), "\n")
-		outputLines := wrapPlain(result, inner)
 		lines = append(lines, piBoxLine("", width, piGray, bg, false))
-		if len(outputLines) > toolPreviewLines {
-			head, tail := toolPreviewLines/2, toolPreviewLines-toolPreviewLines/2
-			for _, line := range outputLines[:head] {
-				lines = append(lines, piBoxLine(" "+line, width, piGray, bg, false))
-			}
-			lines = append(lines, piBoxLine(fmt.Sprintf(" ⋯ %d lines omitted ⋯", len(outputLines)-toolPreviewLines), width, piDim, bg, false))
-			outputLines = outputLines[len(outputLines)-tail:]
-		}
-		for _, line := range outputLines {
-			lines = append(lines, piBoxLine(" "+line, width, piGray, bg, false))
-		}
+		lines = appendToolOutputTail(lines, wrapPlain(result, inner), width, piGray, bg)
+	}
+	if msg.toolProgress != "" {
+		progress := strings.TrimSuffix(sanitizeTerminalText(msg.toolProgress), "\n")
+		lines = append(lines, piBoxLine("", width, piDim, bg, false), piBoxLine(" shell progress · not sent to model", width, piDim, bg, true))
+		lines = appendToolOutputTail(lines, wrapPlain(progress, inner), width, piDim, bg)
 	}
 	lines = append(lines, piBoxLine("", width, piText, bg, false))
 	return strings.Join(lines, "\n")
+}
+
+func appendToolOutputTail(lines, output []string, width int, fg, bg string) []string {
+	if hidden := len(output) - toolOutputLines; hidden > 0 {
+		lines = append(lines, piBoxLine(fmt.Sprintf(" ⋯ %d earlier lines hidden ⋯", hidden), width, piDim, bg, false))
+		output = output[hidden:]
+	}
+	for _, line := range output {
+		lines = append(lines, piBoxLine(" "+line, width, fg, bg, false))
+	}
+	return lines
 }
 
 func highlightedPythonLines(code string, width int, bg string) []string {

@@ -13,7 +13,6 @@ import (
 	"syscall"
 	"testing"
 	"time"
-	"unicode/utf8"
 
 	"github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/option"
@@ -195,31 +194,6 @@ func TestPruneTransientHistoryKeepsConversationAndREPLCalls(t *testing.T) {
 	}
 	if a.history[0].Text != "first" || a.history[1].Text != "prior" || a.history[3].Type != "tool_call" || a.history[4].Text != OmittedToolResult || a.history[5].Text != "final" {
 		t.Fatalf("retained history = %#v", a.history)
-	}
-}
-
-func TestLimitToolOutputKeepsTail(t *testing.T) {
-	var full strings.Builder
-	for i := 1; i <= maxToolOutputLines+10; i++ {
-		fmt.Fprintf(&full, "line-%04d\n", i)
-	}
-	limited := limitToolOutput(full.String())
-	if strings.Contains(limited, "line-0001") || !strings.Contains(limited, "line-2010") {
-		t.Fatalf("limited output did not retain the tail: prefix=%q suffix=%q", limited[:min(100, len(limited))], limited[max(0, len(limited)-100):])
-	}
-	if !strings.Contains(limited, "Tool output truncated:") || !strings.Contains(limited, "Assign large results to a Python variable") {
-		t.Fatalf("limited output lacks truncation guidance: %q", limited[max(0, len(limited)-300):])
-	}
-}
-
-func TestLimitToolOutputRespectsByteLimitAndUTF8(t *testing.T) {
-	full := strings.Repeat("é", maxToolOutputBytes)
-	limited := limitToolOutput(full)
-	if !utf8.ValidString(limited) {
-		t.Fatal("byte-limited output is not valid UTF-8")
-	}
-	if !strings.Contains(limited, "50KB limit") {
-		t.Fatalf("byte limit was not reported: %q", limited[max(0, len(limited)-200):])
 	}
 }
 
@@ -1155,5 +1129,16 @@ func TestPythonREPLShellTimeout(t *testing.T) {
 	}
 	if elapsed := time.Since(started); elapsed > time.Second {
 		t.Fatalf("timed command took %s", elapsed)
+	}
+}
+
+func TestLimitToolOutputKeepsHead(t *testing.T) {
+	output := strings.Repeat("a", maxToolOutputBytes) + strings.Repeat("b", 10)
+	got := limitToolOutput(output)
+	if !strings.HasPrefix(got, strings.Repeat("a", maxToolOutputBytes)+"\n") || strings.Contains(got, "b\n") || !strings.Contains(got, "10 more bytes omitted") {
+		t.Fatalf("limited output = %q", got[maxToolOutputBytes:])
+	}
+	if limitToolOutput("short") != "short" {
+		t.Fatal("short output was changed")
 	}
 }

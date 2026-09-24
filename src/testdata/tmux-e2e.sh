@@ -193,21 +193,21 @@ data = pathlib.Path(sys.argv[1]).read_bytes()
 print(data.count(b"\x1b[?2026h"), data.count(b"\x1b[3J"), len(data))
 PY
 )
-if [[ "$render_frames" -lt 25 || "$render_frames" -gt 50 ]]; then
-  echo "tool burst caused $render_frames renderer frames, want 25-50" >&2
+if [[ "$render_frames" -lt 25 || "$render_frames" -gt 60 ]]; then
+  echo "tool burst caused $render_frames renderer frames, want 25-60" >&2
   exit 1
 fi
 if [[ "$render_replays" -ne 0 ]]; then
   echo "tool burst caused $render_replays full transcript replays, want 0" >&2
   exit 1
 fi
-if [[ "$render_bytes" -gt 40000 ]]; then
-  echo "tool burst wrote $render_bytes terminal bytes, want at most 40000" >&2
+if [[ "$render_bytes" -gt 60000 ]]; then
+  echo "tool burst wrote $render_bytes terminal bytes, want at most 60000" >&2
   exit 1
 fi
 all=$(capture)
-grep -q 'BURST-01' <<<"$all"
-grep -q 'lines omitted' <<<"$all"
+grep -q '50 earlier lines hidden' <<<"$all"
+! grep -q 'BURST-01' <<<"$all"
 grep -q 'BURST-60' <<<"$all"
 grep -q 'burst complete' <<<"$all"
 if rg -q '^[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏] Working…' <<<"$all" ||

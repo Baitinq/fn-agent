@@ -60,16 +60,6 @@ func TestFindHistoryCutKeepsBatchedToolCallsPaired(t *testing.T) {
 	}
 }
 
-func TestSerializeHistoryTruncatesToolResults(t *testing.T) {
-	history := []historyItem{
-		historyItem{Type: "tool_result", CallID: "call_1", Text: strings.Repeat("x", summaryToolOutputLimit+100)},
-	}
-	serialized := serializeHistory(history)
-	if !strings.Contains(serialized, "100 more characters truncated") || strings.Count(serialized, "x") >= summaryToolOutputLimit+100 {
-		t.Fatalf("serialized tool result was not truncated: length=%d", len(serialized))
-	}
-}
-
 func TestCompactHistoryPreservesCanonicalHistory(t *testing.T) {
 	var request map[string]any
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

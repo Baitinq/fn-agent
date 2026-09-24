@@ -1,5 +1,6 @@
 import ast
 import asyncio
+import codecs
 import contextlib
 import dataclasses
 import hashlib
@@ -12,6 +13,7 @@ import os
 import pickle
 import signal
 import sys
+import threading
 import traceback
 from typing import Optional
 import urllib.parse
@@ -19,6 +21,15 @@ import urllib.request
 
 _protocol_in = sys.stdin
 _protocol_out = sys.stdout
+_protocol_lock = threading.Lock()
+
+
+def _send_protocol(message):
+    with _protocol_lock:
+        _protocol_out.write(json.dumps(message) + "\n")
+        _protocol_out.flush()
+
+
 _active_processes = set()
 _executing = False
 _execution_task = None
@@ -73,20 +84,34 @@ async def shell(command, timeout=None):
         start_new_session=True,
     )
     _active_processes.add(process)
+    decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
+    chunks = []
+
+    async def read_output():
+        while True:
+            chunk = await process.stdout.read(65536)
+            text = decoder.decode(chunk, final=not chunk)
+            if text:
+                chunks.append(text)
+                _send_protocol({"progress": text})
+            if not chunk:
+                await process.wait()
+                return
+
     try:
         try:
-            output, _ = await asyncio.wait_for(process.communicate(), timeout)
+            await asyncio.wait_for(read_output(), timeout)
         except asyncio.TimeoutError:
             os.killpg(process.pid, signal.SIGKILL)
-            output, _ = await process.communicate()
-            return ShellResult(output.decode(errors="replace"), -1, f"timeout:{timeout:g}")
+            await read_output()
+            return ShellResult("".join(chunks), -1, f"timeout:{timeout:g}")
         except asyncio.CancelledError:
             if process.returncode is None:
                 os.killpg(process.pid, signal.SIGKILL)
                 await process.wait()
             raise
         error: Optional[str] = None if process.returncode == 0 else f"exit status {process.returncode}"
-        return ShellResult(output.decode(errors="replace"), process.returncode, error)
+        return ShellResult("".join(chunks), process.returncode, error)
     finally:
         _active_processes.discard(process)
 
@@ -155,8 +180,7 @@ async def llm(prompt: str) -> str:
     request_id = next(_llm_request_ids)
     response_future = asyncio.get_running_loop().create_future()
     _llm_responses[request_id] = response_future
-    _protocol_out.write(json.dumps({"host_call": "llm", "id": request_id, "prompt": prompt}) + "\n")
-    _protocol_out.flush()
+    _send_protocol({"host_call": "llm", "id": request_id, "prompt": prompt})
     if _llm_response_reader is None or _llm_response_reader.done():
         _llm_response_reader = asyncio.create_task(_read_llm_responses())
     response = await asyncio.shield(response_future)
@@ -251,7 +275,7 @@ async def _execute(code):
         ShellResult=ShellResult,
         SearchResult=SearchResult,
     )
-    output = io.StringIO()
+    output = _StreamingOutput()
     value = None
     try:
         tree = ast.parse(code, mode="exec")
@@ -280,6 +304,14 @@ async def _execute(code):
                 await _llm_response_reader
         _executing = False
 
+
+class _StreamingOutput(io.StringIO):
+    def write(self, text):
+        if text:
+            _send_protocol({"stream": text})
+        return super().write(text)
+
+
 async def _main():
     global _execution_task
     while line := await asyncio.to_thread(_protocol_in.readline):
@@ -293,7 +325,6 @@ async def _main():
             _execution_task = asyncio.create_task(_execute(request.get("code", "")))
             response = await _execution_task
             _execution_task = None
-        _protocol_out.write(json.dumps(response) + "\n")
-        _protocol_out.flush()
+        _send_protocol(response)
 
 asyncio.run(_main())

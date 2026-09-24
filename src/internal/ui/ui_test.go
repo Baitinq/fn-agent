@@ -632,30 +632,6 @@ func TestToolOutputCannotEmitTerminalControlSequences(t *testing.T) {
 	}
 }
 
-func TestToolCardPreviewsHeadAndTail(t *testing.T) {
-	got := stripANSI(renderedMessage(message{
-		role: "tool", toolCommand: "many", toolResult: buildNumberedLines("OUTPUT", 12), toolState: "success",
-	}, 40))
-	if !strings.Contains(got, "OUTPUT-01") || !strings.Contains(got, "OUTPUT-12") || strings.Contains(got, "OUTPUT-06") {
-		t.Fatalf("tool preview did not keep head and tail: %q", got)
-	}
-	if !strings.Contains(got, "⋯ 7 lines omitted ⋯") {
-		t.Fatalf("tool preview lacks omitted-line count: %q", got)
-	}
-}
-
-func TestStreamingToolOutputBufferIsBounded(t *testing.T) {
-	s, _ := newState(nil)
-	s.responding = true
-	s.nextRequestID = 1
-	s.handleToolEvent(1, toolEvent{Kind: toolEventCall, Name: "shell", ID: "large", Detail: "many"})
-	chunk := strings.Repeat("a", maxToolDisplayBytes+4096)
-	s.handleToolEvent(1, toolEvent{Kind: toolEventUpdate, Name: "shell", ID: "large", Detail: chunk})
-	if got := len(s.messages[0].toolResult); got > maxToolDisplayBytes {
-		t.Fatalf("streaming tool buffer = %d bytes, limit = %d", got, maxToolDisplayBytes)
-	}
-}
-
 func TestRenderFitsNarrowTerminal(t *testing.T) {
 	for _, mode := range []string{"status", "working", "retry", "undo"} {
 		for _, width := range []int{10, 20, 50, 80} {
@@ -1535,5 +1511,48 @@ func TestRenderedMarkdownLinesSanitizesTerminalControls(t *testing.T) {
 	}
 	if !strings.Contains(rendered, "beforeafter2J") {
 		t.Fatalf("rendered output lost surrounding text: %q", rendered)
+	}
+}
+
+func TestToolCardShowsShellProgressUntilResult(t *testing.T) {
+	s := &fnUI{}
+	s.handleToolActivity(toolEvent{Kind: toolEventCall, Name: "repl", ID: "c", Detail: "await shell('make')"})
+	s.handleToolActivity(toolEvent{Kind: toolEventProgress, Name: "repl", ID: "c", Detail: "compiling\n"})
+	lines, _, _ := s.render(80, 40)
+	rendered := strings.Join(lines, "\n")
+	if !strings.Contains(rendered, "shell progress · not sent to model") || !strings.Contains(rendered, "compiling") {
+		t.Fatalf("progress not rendered:\n%s", rendered)
+	}
+	s.handleToolActivity(toolEvent{Kind: toolEventResult, Name: "repl", ID: "c", Detail: "done"})
+	lines, _, _ = s.render(80, 40)
+	rendered = strings.Join(lines, "\n")
+	if strings.Contains(rendered, "compiling") || !strings.Contains(rendered, "done") {
+		t.Fatalf("result did not replace progress:\n%s", rendered)
+	}
+}
+
+func TestToolCardShowsOnlyOutputTail(t *testing.T) {
+	s := &fnUI{}
+	s.handleToolActivity(toolEvent{Kind: toolEventCall, Name: "repl", ID: "c", Detail: "print"})
+	var output strings.Builder
+	for i := range 25 {
+		fmt.Fprintf(&output, "line-%02d\n", i)
+	}
+	s.handleToolActivity(toolEvent{Kind: toolEventResult, Name: "repl", ID: "c", Detail: output.String()})
+	lines, _, _ := s.render(80, 40)
+	rendered := strings.Join(lines, "\n")
+	if !strings.Contains(rendered, "15 earlier lines hidden") || strings.Contains(rendered, "line-14") || !strings.Contains(rendered, "line-15") || !strings.Contains(rendered, "line-24") {
+		t.Fatalf("unexpected tool card:\n%s", rendered)
+	}
+}
+
+func TestToolCardKeepsOnlyRecentShellProgress(t *testing.T) {
+	s := &fnUI{}
+	s.handleToolActivity(toolEvent{Kind: toolEventCall, Name: "repl", ID: "c", Detail: "await shell('make')"})
+	s.handleToolActivity(toolEvent{Kind: toolEventProgress, Name: "repl", ID: "c", Detail: "old\n" + strings.Repeat("x", maxToolProgressBytes)})
+	s.handleToolActivity(toolEvent{Kind: toolEventProgress, Name: "repl", ID: "c", Detail: "\nnew\n"})
+	progress := s.messages[len(s.messages)-1].toolProgress
+	if len(progress) != maxToolProgressBytes || strings.Contains(progress, "old") || !strings.HasSuffix(progress, "new\n") {
+		t.Fatalf("progress len = %d, suffix = %q", len(progress), progress[len(progress)-8:])
 	}
 }

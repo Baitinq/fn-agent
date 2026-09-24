@@ -22,6 +22,7 @@ type message struct {
 	role, text                    string
 	toolID, toolName, toolCommand string
 	toolResult, toolState         string
+	toolProgress                  string
 	toolStartedAt, toolFinishedAt time.Time
 	renderedWidth                 int
 	renderedLines                 []string
@@ -58,6 +59,7 @@ const (
 	toolEventTextDelta              = agent.ToolEventTextDelta
 	toolEventCall                   = agent.ToolEventCall
 	toolEventUpdate                 = agent.ToolEventUpdate
+	toolEventProgress               = agent.ToolEventProgress
 	toolEventResult                 = agent.ToolEventResult
 	toolEventError                  = agent.ToolEventError
 )
@@ -130,8 +132,8 @@ const (
 	backgroundRenderInterval = time.Second / 60
 	eventPollInterval        = 10 * time.Millisecond
 	maxUpdatesPerIteration   = 64
-	toolPreviewLines         = 5
-	maxToolDisplayBytes      = 50 * 1024
+	toolOutputLines          = 10
+	maxToolProgressBytes     = 16 * 1024
 )
 
 func newUI(modelName, reasoningEffort string, respond func(string, <-chan string, func(toolEvent), context.Context) response) *fnUI {
@@ -403,15 +405,11 @@ func (s *fnUI) handleToolEvent(id int, ev toolEvent) {
 	s.handleToolActivity(ev)
 }
 
-func trimToolDisplayTail(output string) string {
-	if len(output) <= maxToolDisplayBytes {
-		return output
+func keepToolProgressTail(progress string) string {
+	if len(progress) <= maxToolProgressBytes {
+		return progress
 	}
-	start := len(output) - maxToolDisplayBytes
-	for start < len(output) && output[start]&0xc0 == 0x80 {
-		start++
-	}
-	return output[start:]
+	return strings.ToValidUTF8(progress[len(progress)-maxToolProgressBytes:], "")
 }
 
 func (s *fnUI) handleToolActivity(ev toolEvent) {
@@ -422,7 +420,7 @@ func (s *fnUI) handleToolActivity(ev toolEvent) {
 		})
 		return
 	}
-	if ev.Kind != toolEventUpdate && ev.Kind != toolEventResult && ev.Kind != toolEventError {
+	if ev.Kind != toolEventUpdate && ev.Kind != toolEventProgress && ev.Kind != toolEventResult && ev.Kind != toolEventError {
 		return
 	}
 	for i := len(s.messages) - 1; i >= 0; i-- {
@@ -434,9 +432,12 @@ func (s *fnUI) handleToolActivity(ev toolEvent) {
 			continue
 		}
 		if ev.Kind == toolEventUpdate {
-			msg.toolResult = trimToolDisplayTail(msg.toolResult + ev.Detail)
+			msg.toolResult += ev.Detail
+		} else if ev.Kind == toolEventProgress {
+			msg.toolProgress = keepToolProgressTail(msg.toolProgress + ev.Detail)
 		} else {
 			msg.toolResult = ev.Detail
+			msg.toolProgress = ""
 			msg.toolFinishedAt = time.Now()
 			if ev.Kind == toolEventError {
 				msg.toolState = "error"

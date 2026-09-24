@@ -22,6 +22,7 @@ var pythonREPLScript string
 const (
 	replInterruptGracePeriod = time.Second
 	replCheckpointTimeout    = 5 * time.Second
+	replStreamInterval       = 50 * time.Millisecond
 )
 
 var errREPLInterruptTimeout = errors.New("Python REPL did not respond to interrupt")
@@ -47,6 +48,8 @@ type replResult struct {
 	HostCall string `json:"host_call"`
 	ID       int    `json:"id"`
 	Prompt   string `json:"prompt"`
+	Stream   string `json:"stream"`
+	Progress string `json:"progress"`
 }
 
 func newPythonREPL(llm func(context.Context, string) (string, error)) *pythonREPL {
@@ -165,6 +168,11 @@ func (r *pythonREPL) takeNotices() []string {
 }
 
 func (r *pythonREPL) execute(ctx context.Context, code string) (string, bool, error) {
+	return r.executeStreaming(ctx, code, func(string, bool) {})
+}
+
+// executeStreaming reports printed output, and shell() progress with progress set.
+func (r *pythonREPL) executeStreaming(ctx context.Context, code string, stream func(text string, progress bool)) (string, bool, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if err := ctx.Err(); err != nil {
@@ -173,7 +181,7 @@ func (r *pythonREPL) execute(ctx context.Context, code string) (string, bool, er
 	if err := r.start(); err != nil {
 		return "", false, err
 	}
-	output, failed, err := r.requestLocked(ctx, map[string]string{"code": code})
+	output, failed, err := r.requestLocked(ctx, map[string]string{"code": code}, stream)
 	if err != nil {
 		return output, failed, r.recover(err)
 	}
@@ -227,7 +235,7 @@ func (r *pythonREPL) restore(path, objectsPath string) error {
 }
 
 func (r *pythonREPL) operationLocked(ctx context.Context, op, path, objectsPath string) error {
-	output, failed, err := r.requestLocked(ctx, map[string]string{"op": op, "path": path, "objects_path": objectsPath})
+	output, failed, err := r.requestLocked(ctx, map[string]string{"op": op, "path": path, "objects_path": objectsPath}, nil)
 	if err != nil {
 		return err
 	}
@@ -237,7 +245,7 @@ func (r *pythonREPL) operationLocked(ctx context.Context, op, path, objectsPath 
 	return nil
 }
 
-func (r *pythonREPL) requestLocked(ctx context.Context, request map[string]string) (string, bool, error) {
+func (r *pythonREPL) requestLocked(ctx context.Context, request map[string]string, stream func(string, bool)) (string, bool, error) {
 	payload, err := json.Marshal(request)
 	if err != nil {
 		return "", false, err
@@ -246,7 +254,7 @@ func (r *pythonREPL) requestLocked(ctx context.Context, request map[string]strin
 		r.stop()
 		return "", false, err
 	}
-	return r.readResult(ctx)
+	return r.readResult(ctx, stream)
 }
 
 func (r *pythonREPL) writeTo(stdin io.Writer, data []byte) (int, error) {
@@ -255,7 +263,7 @@ func (r *pythonREPL) writeTo(stdin io.Writer, data []byte) (int, error) {
 	return stdin.Write(data)
 }
 
-func (r *pythonREPL) readResult(ctx context.Context) (string, bool, error) {
+func (r *pythonREPL) readResult(ctx context.Context, stream func(string, bool)) (string, bool, error) {
 	type readResult struct {
 		line []byte
 		err  error
@@ -264,6 +272,16 @@ func (r *pythonREPL) readResult(ctx context.Context) (string, bool, error) {
 	cancel := ctx.Done()
 	var canceled error
 	var interruptDeadline <-chan time.Time
+	var pending strings.Builder
+	var pendingProgress bool
+	var flush <-chan time.Time
+	flushPending := func() {
+		if pending.Len() > 0 {
+			stream(pending.String(), pendingProgress)
+			pending.Reset()
+		}
+		flush = nil
+	}
 	for {
 		read := make(chan readResult, 1)
 		go func(stdout *bufio.Reader) {
@@ -286,6 +304,8 @@ func (r *pythonREPL) readResult(ctx context.Context) (string, bool, error) {
 			case err := <-hostCallError:
 				r.stop()
 				return "", true, err
+			case <-flush:
+				flushPending()
 			case result = <-read:
 				goto received
 			}
@@ -304,6 +324,19 @@ func (r *pythonREPL) readResult(ctx context.Context) (string, bool, error) {
 			r.stop()
 			return "", true, fmt.Errorf("invalid Python REPL response: %w", err)
 		}
+		if response.Stream != "" || response.Progress != "" {
+			progress := response.Progress != ""
+			if progress != pendingProgress {
+				flushPending()
+				pendingProgress = progress
+			}
+			pending.WriteString(response.Stream + response.Progress)
+			if flush == nil {
+				flush = time.After(replStreamInterval)
+			}
+			continue
+		}
+		flushPending()
 		if response.HostCall == "llm" {
 			go r.runLLMHostCall(ctx, r.stdin, response.ID, response.Prompt, hostCallError)
 			continue

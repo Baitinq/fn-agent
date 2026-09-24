@@ -241,3 +241,37 @@ func TestGeminiCancellationPreservesCompletedToolTurn(t *testing.T) {
 		t.Fatalf("completed tool turn was not preserved after cancellation: %#v", contents)
 	}
 }
+
+func TestRespondStreamsExactlyTheLimitedToolOutput(t *testing.T) {
+	t.Setenv("GEMINI_API_KEY", "test-key")
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		if calls.Add(1) == 1 {
+			fmt.Fprintln(w, `data: {"candidates":[{"content":{"role":"model","parts":[{"functionCall":{"name":"repl","args":{"code":"for _ in range(2000): print('x' * 99)"},"id":"call_1"}}]}}]}`)
+			return
+		}
+		fmt.Fprintln(w, `data: {"candidates":[{"content":{"role":"model","parts":[{"text":"done"}]}}]}`)
+	}))
+	defer server.Close()
+
+	a := &Agent{provider: "gemini", baseURL: server.URL, httpClient: server.Client(), modelName: "gemini-3.7-flash", maxRetries: 0, cwd: t.TempDir()}
+	startTestSession(t, a)
+	var streamed strings.Builder
+	var result string
+	response := a.Respond("print", nil, func(event ToolEvent) {
+		switch event.Kind {
+		case ToolEventUpdate:
+			streamed.WriteString(event.Detail)
+		case ToolEventResult:
+			result = event.Detail
+		}
+	}, context.Background())
+	if response.Err != nil {
+		t.Fatal(response.Err)
+	}
+	want := limitToolOutput(strings.Repeat(strings.Repeat("x", 99)+"\n", 2000))
+	if result != want || !strings.HasPrefix(result, streamed.String()+"\n[output truncated") {
+		t.Fatalf("streamed %d bytes, result %d bytes", streamed.Len(), len(result))
+	}
+}

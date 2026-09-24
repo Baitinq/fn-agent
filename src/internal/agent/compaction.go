@@ -104,25 +104,12 @@ func findHistoryCut(history []historyItem, keepTokens int) int {
 	return 0
 }
 
-func truncateSummaryToolOutput(item map[string]any) {
-	if item["type"] != "tool_result" {
-		return
-	}
-	output, ok := item["text"].(string)
-	if !ok || len(output) <= summaryToolOutputLimit {
-		return
-	}
-	item["text"] = fmt.Sprintf("%s\n\n[... %d more characters truncated]", output[:summaryToolOutputLimit], len(output)-summaryToolOutputLimit)
-}
-
 func serializeHistory(history []historyItem) string {
 	var result strings.Builder
 	for _, entry := range history {
 		data, _ := json.Marshal(entry)
 		var item map[string]any
 		_ = json.Unmarshal(data, &item)
-		truncateSummaryToolOutput(item)
-		data, _ = json.Marshal(item)
 
 		label := "Conversation item"
 		if role, ok := item["role"].(string); ok {

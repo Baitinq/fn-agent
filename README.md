@@ -156,8 +156,8 @@ ranked titles, URLs, and snippets; full pages can still be inspected with
 - `Ctrl/Alt+←/→` or `Alt+B/F` — move by word
 - `Ctrl+W`, `Alt+D`, `Ctrl+U`, `Ctrl+K` — delete words or surrounding text
 
-Reasoning summaries stream as italic gray text. REPL calls appear as Python cells,
-and model-visible output is capped at 2,000 lines or 50KB. Primary-screen rendering
+Reasoning summaries stream as italic gray text. REPL calls appear as Python cells
+whose output streams live, showing the last 10 lines of what the model sees (capped at 50KB); `shell()` output streams separately as dimmed progress that is not sent to the model. Primary-screen rendering
 keeps terminal scrollback, selection, search, and copying native. Distinguishing
 `Shift+Enter` requires terminal keyboard-enhancement support.
 

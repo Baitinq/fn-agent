@@ -274,3 +274,100 @@ func TestFormatREPLCancellation(t *testing.T) {
 		}
 	}
 }
+
+func TestPythonREPLStreamsOutputBeforeExecutionFinishes(t *testing.T) {
+	r := newPythonREPL(nil)
+	t.Cleanup(r.close)
+	first := make(chan string, 1)
+	release := filepath.Join(t.TempDir(), "release")
+	code := fmt.Sprintf("import os, time\nprint('first')\nwhile not os.path.exists(%q):\n    time.sleep(0.01)\nprint('second')", release)
+	type result struct {
+		output string
+		err    error
+	}
+	done := make(chan result, 1)
+	var streamed strings.Builder
+	go func() {
+		output, _, err := r.executeStreaming(context.Background(), code, func(chunk string, _ bool) {
+			streamed.WriteString(chunk)
+			if streamed.String() == "first\n" {
+				first <- streamed.String()
+			}
+		})
+		done <- result{output, err}
+	}()
+
+	select {
+	case got := <-first:
+		if got != "first\n" {
+			t.Fatalf("streamed = %q", got)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("output was not streamed before execution finished")
+	}
+	if err := os.WriteFile(release, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	res := <-done
+	if res.err != nil {
+		t.Fatal(res.err)
+	}
+	if res.output != "first\nsecond\n" || streamed.String() != res.output {
+		t.Fatalf("output = %q, streamed = %q", res.output, streamed.String())
+	}
+}
+
+func TestPythonREPLStreamsShellProgressSeparately(t *testing.T) {
+	r := newPythonREPL(nil)
+	t.Cleanup(r.close)
+	started := make(chan struct{})
+	release := filepath.Join(t.TempDir(), "release")
+	code := fmt.Sprintf("r = await shell('echo first; while [ ! -e %s ]; do sleep 0.01; done; echo second')\nprint(r.stdout.upper(), end='')", release)
+	type result struct {
+		output string
+		err    error
+	}
+	done := make(chan result, 1)
+	var progress, printed strings.Builder
+	go func() {
+		output, _, err := r.executeStreaming(context.Background(), code, func(chunk string, isProgress bool) {
+			if !isProgress {
+				printed.WriteString(chunk)
+				return
+			}
+			progress.WriteString(chunk)
+			if progress.String() == "first\n" {
+				close(started)
+			}
+		})
+		done <- result{output, err}
+	}()
+
+	select {
+	case <-started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("shell progress was not streamed before the command finished")
+	}
+	if err := os.WriteFile(release, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	res := <-done
+	if res.err != nil {
+		t.Fatal(res.err)
+	}
+	if progress.String() != "first\nsecond\n" || res.output != "FIRST\nSECOND\n" || printed.String() != res.output {
+		t.Fatalf("progress = %q, printed = %q, output = %q", progress.String(), printed.String(), res.output)
+	}
+}
+
+func TestPythonShellTimeoutKeepsPartialOutput(t *testing.T) {
+	r := newPythonREPL(nil)
+	t.Cleanup(r.close)
+	output, _, err := r.execute(context.Background(), "r = await shell('echo partial; sleep 5', timeout=0.2)\nprint(repr(r.stdout), r.error)")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if output != "'partial\\n' timeout:0.2\n" {
+		t.Fatalf("output = %q", output)
+	}
+}
