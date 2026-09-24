@@ -414,12 +414,12 @@ func renderedToolMessage(msg message, width int, now time.Time) string {
 	}
 	if msg.toolResult != "" {
 		result := strings.TrimSuffix(sanitizeTerminalText(msg.toolResult), "\n")
-		lines = append(lines, piBoxLine("", width, piGray, bg, false))
+		lines = append(lines, piBoxLine("", width, piGray, bg, false), piBoxLine(" Output", width, piGray, bg, true))
 		lines = appendToolOutputTail(lines, wrapPlain(result, inner), width, piGray, bg)
 	}
 	if msg.toolProgress != "" {
 		progress := strings.TrimSuffix(sanitizeTerminalText(msg.toolProgress), "\n")
-		lines = append(lines, piBoxLine("", width, piDim, bg, false), piBoxLine(" shell progress · not sent to model", width, piDim, bg, true))
+		lines = append(lines, piBoxLine("", width, piDim, bg, false), piBoxLine(" Live output", width, piDim, bg, true))
 		lines = appendToolOutputTail(lines, wrapPlain(progress, inner), width, piDim, bg)
 	}
 	lines = append(lines, piBoxLine("", width, piText, bg, false))

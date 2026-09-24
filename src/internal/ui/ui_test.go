@@ -1520,13 +1520,13 @@ func TestToolCardShowsShellProgressUntilResult(t *testing.T) {
 	s.handleToolActivity(toolEvent{Kind: toolEventProgress, Name: "repl", ID: "c", Detail: "compiling\n"})
 	lines, _, _ := s.render(80, 40)
 	rendered := strings.Join(lines, "\n")
-	if !strings.Contains(rendered, "shell progress · not sent to model") || !strings.Contains(rendered, "compiling") {
+	if !strings.Contains(rendered, "Live output") || !strings.Contains(rendered, "compiling") {
 		t.Fatalf("progress not rendered:\n%s", rendered)
 	}
 	s.handleToolActivity(toolEvent{Kind: toolEventResult, Name: "repl", ID: "c", Detail: "done"})
 	lines, _, _ = s.render(80, 40)
 	rendered = strings.Join(lines, "\n")
-	if strings.Contains(rendered, "compiling") || !strings.Contains(rendered, "done") {
+	if strings.Contains(rendered, "Live output") || strings.Contains(rendered, "compiling") || !strings.Contains(rendered, "Output") || !strings.Contains(rendered, "done") {
 		t.Fatalf("result did not replace progress:\n%s", rendered)
 	}
 }
