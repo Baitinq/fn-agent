@@ -855,6 +855,36 @@ func TestPythonREPLRunsAsyncShellCallsConcurrently(t *testing.T) {
 	}
 }
 
+func TestPythonREPLCancelsTasksAfterError(t *testing.T) {
+	repl := newPythonREPL(nil)
+	t.Cleanup(repl.close)
+
+	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
+	defer cancel()
+	baseline, failed, err := repl.execute(ctx, `import asyncio; len(asyncio.all_tasks())`)
+	if err != nil || failed {
+		t.Fatalf("baseline execution = %q, failed=%v, error=%v", baseline, failed, err)
+	}
+	code := `import asyncio
+async def fail():
+    await asyncio.sleep(0.05)
+    raise ValueError("boom")
+async def sibling():
+    try:
+        await shell("sleep 10 | cat")
+    finally:
+        print("sibling stopped")
+await asyncio.gather(fail(), sibling())`
+	output, failed, err := repl.execute(ctx, code)
+	if err != nil || !failed || !strings.Contains(output, "ValueError: boom") || !strings.Contains(output, "sibling stopped") {
+		t.Fatalf("failed execution = %q, failed=%v, error=%v", output, failed, err)
+	}
+	output, failed, err = repl.execute(ctx, `len(asyncio.all_tasks())`)
+	if err != nil || failed || output != baseline {
+		t.Fatalf("next execution = %q, failed=%v, error=%v", output, failed, err)
+	}
+}
+
 func TestPythonREPLRequiresStringLLMPrompt(t *testing.T) {
 	repl := newPythonREPL(func(_ context.Context, prompt string) (string, error) {
 		t.Fatalf("llm callback called with %q", prompt)

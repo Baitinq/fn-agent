@@ -276,6 +276,8 @@ async def _execute(code):
         SearchResult=SearchResult,
     )
     output = _StreamingOutput()
+    existing_tasks = asyncio.all_tasks()
+    error = ""
     value = None
     try:
         tree = ast.parse(code, mode="exec")
@@ -290,19 +292,26 @@ async def _execute(code):
                     value = await value
             else:
                 await _run_code(tree)
-        rendered = output.getvalue()
-        if value is not None:
-            rendered += repr(value)
-        return {"output": rendered}
     except BaseException:
-        return {"output": output.getvalue() + traceback.format_exc(), "error": True}
+        error = traceback.format_exc()
     finally:
+        with contextlib.redirect_stdout(output), contextlib.redirect_stderr(output):
+            tasks = asyncio.all_tasks() - existing_tasks - {_llm_response_reader}
+            for task in tasks:
+                task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
         if _llm_response_reader is not None:
             if _llm_response_reader.done():
                 _llm_response_reader.result()
             else:
                 await _llm_response_reader
         _executing = False
+    rendered = output.getvalue()
+    if error:
+        return {"output": rendered + error, "error": True}
+    if value is not None:
+        rendered += repr(value)
+    return {"output": rendered}
 
 
 class _StreamingOutput(io.StringIO):

@@ -18,6 +18,7 @@ import (
 )
 
 func TestRequireAPIKey(t *testing.T) {
+	t.Setenv("FN_API_KEY", "")
 	t.Setenv("FN_PROVIDER", "")
 	t.Setenv("FN_MODEL", "")
 	t.Setenv("OPENAI_API_KEY", "")
