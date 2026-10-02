@@ -139,7 +139,7 @@ func prefixUserMessage(msg string, now time.Time) string {
 const defaultBaseURL = "https://api.openai.com/v1/"
 const defaultGeminiBaseURL = "https://generativelanguage.googleapis.com/v1beta"
 const defaultAnthropicBaseURL = "https://api.anthropic.com"
-const defaultModelName = "anthropic/claude-opus-5.5"
+const defaultModelName = "claude-opus-5-5"
 const defaultProvider = "anthropic"
 const defaultReasoningEffort = shared.ReasoningEffortMedium
 const compactionKeepTokens = 20000
