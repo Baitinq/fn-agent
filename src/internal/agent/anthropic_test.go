@@ -31,7 +31,7 @@ func TestAnthropicRespondExecutesToolAndPreservesThinkingSignature(t *testing.T)
 		w.Header().Set("Content-Type", "text/event-stream")
 		switch calls.Add(1) {
 		case 1:
-			if len(request.Tools) != 1 || request.System == "" || request.Thinking["type"] != "enabled" {
+			if len(request.Tools) != 1 || len(request.System) != 1 || request.System[0].Text == "" || request.Thinking["type"] != "enabled" {
 				t.Errorf("first request = %#v", request)
 			}
 			fmt.Fprintln(w, `data: {"type":"message_start","message":{"usage":{"input_tokens":10,"cache_read_input_tokens":2}}}`)

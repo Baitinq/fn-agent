@@ -13,17 +13,18 @@ import (
 )
 
 type anthropicContent struct {
-	Type      string          `json:"type"`
-	Text      string          `json:"text,omitempty"`
-	Thinking  *string         `json:"thinking,omitempty"`
-	Signature string          `json:"signature,omitempty"`
-	ID        string          `json:"id,omitempty"`
-	Name      string          `json:"name,omitempty"`
-	Input     json.RawMessage `json:"input,omitempty"`
-	ToolUseID string          `json:"tool_use_id,omitempty"`
-	Content   string          `json:"content,omitempty"`
-	Data      string          `json:"data,omitempty"`
-	IsError   bool            `json:"is_error,omitempty"`
+	Type         string            `json:"type"`
+	Text         string            `json:"text,omitempty"`
+	Thinking     *string           `json:"thinking,omitempty"`
+	Signature    string            `json:"signature,omitempty"`
+	ID           string            `json:"id,omitempty"`
+	Name         string            `json:"name,omitempty"`
+	Input        json.RawMessage   `json:"input,omitempty"`
+	ToolUseID    string            `json:"tool_use_id,omitempty"`
+	Content      string            `json:"content,omitempty"`
+	Data         string            `json:"data,omitempty"`
+	IsError      bool              `json:"is_error,omitempty"`
+	CacheControl map[string]string `json:"cache_control,omitempty"`
 }
 
 type anthropicMessage struct {
@@ -34,7 +35,7 @@ type anthropicMessage struct {
 type anthropicRequest struct {
 	Model        string             `json:"model"`
 	MaxTokens    int64              `json:"max_tokens"`
-	System       string             `json:"system,omitempty"`
+	System       []anthropicContent `json:"system,omitempty"`
 	Messages     []anthropicMessage `json:"messages"`
 	Tools        []any              `json:"tools,omitempty"`
 	Thinking     map[string]any     `json:"thinking,omitempty"`
@@ -169,9 +170,16 @@ func (a *Agent) streamAnthropic(ctx context.Context, request modelRequest, emit 
 	if budget >= maxTokens {
 		budget = maxTokens - 1
 	}
+	ephemeral := map[string]string{"type": "ephemeral"}
 	payload := anthropicRequest{
-		Model: a.modelName, MaxTokens: maxTokens, System: request.Instructions,
+		Model: a.modelName, MaxTokens: maxTokens,
+		System:   []anthropicContent{{Type: "text", Text: request.Instructions, CacheControl: ephemeral}},
 		Messages: anthropicMessages(request.History, a.modelName), Stream: true,
+	}
+	// Tool results are pruned after each call, so only blocks before the latest user message stay byte-identical in the next request.
+	if n := len(payload.Messages); n >= 2 {
+		content := payload.Messages[n-2].Content
+		content[len(content)-1].CacheControl = ephemeral
 	}
 	if anthropicAdaptiveThinking(a.modelName) {
 		payload.Thinking = map[string]any{"type": "adaptive"}
