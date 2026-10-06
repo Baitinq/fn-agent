@@ -95,7 +95,7 @@ func openAIInput(history []historyItem, model string) responses.ResponseInputPar
 }
 
 func (a *Agent) streamOpenAI(ctx context.Context, request modelRequest, emit func(ToolEvent)) (modelResponse, error) {
-	params := responses.ResponseNewParams{Model: a.modelName, Input: responses.ResponseNewParamsInputUnion{OfInputItemList: openAIInput(request.History, a.modelName)}, Store: openai.Bool(false)}
+	params := responses.ResponseNewParams{Model: a.modelName, Input: responses.ResponseNewParamsInputUnion{OfInputItemList: openAIInput(request.History, a.modelName)}, Store: openai.Bool(false), PromptCacheKey: openai.String(a.sessionID)}
 	if request.Instructions != "" {
 		params.Instructions = openai.String(request.Instructions)
 	}
