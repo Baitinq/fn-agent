@@ -83,6 +83,7 @@ type fnUI struct {
 	sessionID              string
 	reasoningEffort        string
 	contextTokens          int64
+	cacheHitRate           float64
 	respond                func(string, <-chan string, func(toolEvent), context.Context) response
 	textarea               *tui.TextArea
 	textareaWidth          int
@@ -301,6 +302,7 @@ func (s *fnUI) handleToolEvent(id int, ev toolEvent) {
 	switch ev.Kind {
 	case toolEventContextTokens:
 		s.contextTokens = ev.ContextTokens
+		s.cacheHitRate = ev.CacheHitRate
 		s.markDirty()
 		return
 	case toolEventCompactionStart:
@@ -778,6 +780,7 @@ func (s *fnUI) handleUndoKey(k tui.KeyEvent) bool {
 		}
 		assert.That(len(s.inputHistory) == selected, "undo options do not match user messages")
 		s.contextTokens = 0
+		s.cacheHitRate = 0
 		s.textarea.SetText(text)
 		s.textarea.SetCursorPos(runeToClusterIndex(text, len([]rune(text))))
 	default:

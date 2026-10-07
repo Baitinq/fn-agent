@@ -375,5 +375,5 @@ func (a *Agent) recordUsage(usage Usage, emit func(ToolEvent)) {
 	a.usage = append(a.usage, usage)
 	a.tokensUsed += usage.TotalTokens
 	a.usageMu.Unlock()
-	emit(ToolEvent{Kind: ToolEventContextTokens, ContextTokens: usage.TotalTokens})
+	emit(ToolEvent{Kind: ToolEventContextTokens, ContextTokens: usage.TotalTokens, CacheHitRate: usage.cacheHitRate()})
 }

@@ -1115,8 +1115,8 @@ func TestShortDocumentFillsAndBottomAlignsViewport(t *testing.T) {
 }
 
 func TestFooterIsSimplifiedAndQuiet(t *testing.T) {
-	footer := renderFooter("gpt-5", "high", 12345, "/tmp/project", "abc123", 100)
-	if got, want := stripANSI(footer), "gpt-5 (high)  ·  12k context  ·  /tmp/project  ·  abc123"; got != want {
+	footer := renderFooter("gpt-5", "high", 12345, 0.875, "/tmp/project", "abc123", 100)
+	if got, want := stripANSI(footer), "gpt-5 (high)  ·  12k context  ·  88% cache  ·  /tmp/project  ·  abc123"; got != want {
 		t.Fatalf("footer text = %q, want %q", got, want)
 	}
 	if strings.Contains(footer, "38;2;181;189;104") || strings.Contains(footer, "38;2;138;190;183") {

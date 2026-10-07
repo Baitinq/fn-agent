@@ -65,7 +65,7 @@ func (s *fnUI) render(width int, viewportHeight ...int) ([]string, int, int) {
 	editor, crow, ccol := renderEditor(s.textarea.Text(), s.textarea.CursorPos(), width)
 	cursorRow := len(lines) + crow
 	lines = append(lines, editor...)
-	lines = append(lines, renderFooter(s.modelName, s.reasoningEffort, s.contextTokens, s.cwd, s.sessionID, max(width-2, 0)))
+	lines = append(lines, renderFooter(s.modelName, s.reasoningEffort, s.contextTokens, s.cacheHitRate, s.cwd, s.sessionID, max(width-2, 0)))
 	if len(viewportHeight) > 0 {
 		filler := max(viewportHeight[0]-len(lines), 0)
 		if filler > 0 {
@@ -167,8 +167,8 @@ type footerPart struct {
 	color string
 }
 
-func renderFooter(model, effort string, contextTokens int64, cwd, sessionID string, width int) string {
-	parts := []footerPart{{model, piText}, {" (", piDim}, {effort, piGray}, {")  ·  ", piDim}, {formatTokenCount(contextTokens) + " context", piGray}, {"  ·  ", piDim}, {cwd, piGray}, {"  ·  ", piDim}, {sessionID, piGray}}
+func renderFooter(model, effort string, contextTokens int64, cacheHitRate float64, cwd, sessionID string, width int) string {
+	parts := []footerPart{{model, piText}, {" (", piDim}, {effort, piGray}, {")  ·  ", piDim}, {formatTokenCount(contextTokens) + " context", piGray}, {"  ·  ", piDim}, {fmt.Sprintf("%.0f%% cache", cacheHitRate*100), piGray}, {"  ·  ", piDim}, {cwd, piGray}, {"  ·  ", piDim}, {sessionID, piGray}}
 	var out strings.Builder
 	for _, part := range parts {
 		if width <= 0 {

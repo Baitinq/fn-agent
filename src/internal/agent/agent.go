@@ -194,6 +194,7 @@ type ToolEvent struct {
 	MaxAttempts   int
 	Delay         time.Duration
 	ContextTokens int64
+	CacheHitRate  float64
 }
 
 // Response is the completed result of an agent turn.
@@ -216,6 +217,13 @@ type Usage struct {
 	OutputTokens          int64 `json:"output_tokens"`
 	ReasoningOutputTokens int64 `json:"reasoning_output_tokens"`
 	TotalTokens           int64 `json:"total_tokens"`
+}
+
+func (u Usage) cacheHitRate() float64 {
+	if u.InputTokens == 0 {
+		return 0
+	}
+	return float64(u.CachedInputTokens) / float64(u.InputTokens)
 }
 
 // TokensUsed returns the total tokens used by completed model responses.
