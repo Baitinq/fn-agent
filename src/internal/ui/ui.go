@@ -892,7 +892,7 @@ func (s *fnUI) restoreConversation(conversation []agent.ConversationMessage) {
 	}
 }
 
-func Run(modelName, reasoningEffort, sessionID, cwd string, conversation []agent.ConversationMessage, commands Commands, respond func(string, <-chan string, func(agent.ToolEvent), context.Context) agent.Response) error {
+func Run(modelName, reasoningEffort, sessionID, cwd string, conversation []agent.ConversationMessage, contextTokens int64, cacheHitRate float64, commands Commands, respond func(string, <-chan string, func(agent.ToolEvent), context.Context) agent.Response) error {
 	term, err := tui.NewANSITerminal(os.Stdout, os.Stdin)
 	if err != nil {
 		return err
@@ -930,6 +930,8 @@ func Run(modelName, reasoningEffort, sessionID, cwd string, conversation []agent
 	root.sessionID = sessionID
 	root.commands = commands
 	root.restoreConversation(conversation)
+	root.contextTokens = contextTokens
+	root.cacheHitRate = cacheHitRate
 	root.cwd = cwd
 	root.dispatch = func(fn func()) { updates <- fn }
 	// Run serializes every state mutation below and marks the corresponding

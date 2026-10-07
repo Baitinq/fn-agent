@@ -233,6 +233,17 @@ func (a *Agent) TokensUsed() int64 {
 	return a.tokensUsed
 }
 
+// ContextUsage returns the context tokens and cache hit rate of the latest model response.
+func (a *Agent) ContextUsage() (int64, float64) {
+	a.usageMu.Lock()
+	defer a.usageMu.Unlock()
+	if len(a.usage) == 0 {
+		return 0, 0
+	}
+	last := a.usage[len(a.usage)-1]
+	return last.TotalTokens, last.cacheHitRate()
+}
+
 // Usage returns token consumption for completed model responses.
 func (a *Agent) Usage() []Usage {
 	a.usageMu.Lock()

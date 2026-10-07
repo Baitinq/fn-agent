@@ -239,7 +239,8 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 			return id, nil
 		},
 	}
-	return ui.Run(a.ModelName(), a.ReasoningEffort(), sessionID, cwd, a.Conversation(), commands, respond)
+	contextTokens, cacheHitRate := a.ContextUsage()
+	return ui.Run(a.ModelName(), a.ReasoningEffort(), sessionID, cwd, a.Conversation(), contextTokens, cacheHitRate, commands, respond)
 }
 
 func main() {

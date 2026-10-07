@@ -83,7 +83,7 @@ func TestTmuxHarness(t *testing.T) {
 			return agent.Response{Text: "ECHO<" + input + ">", ContextTokens: 777}
 		}
 	}
-	if err := Run("tmux-e2e", "medium", "test-session", "/tmp/project", nil, Commands{}, respond); err != nil {
+	if err := Run("tmux-e2e", "medium", "test-session", "/tmp/project", nil, 0, 0, Commands{}, respond); err != nil {
 		t.Fatal(err)
 	}
 }
