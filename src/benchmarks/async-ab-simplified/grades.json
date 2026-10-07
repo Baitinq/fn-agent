@@ -1,0 +1,982 @@
+{
+  "short-03-previous": {
+    "correct": true,
+    "complete": true,
+    "severity": "none",
+    "unsupported_claims": [],
+    "explanation": "The answer accurately identifies SIGINT and the foreground cancellation handler, FD 3 for host requests and FD 4 for responses, and the 250 ms streaming observation interval. Relevant source paths and identifiers are cited concisely."
+  },
+  "failure-06-simplified": {
+    "correct": false,
+    "complete": true,
+    "severity": "material",
+    "unsupported_claims": [
+      "Timeout or cancellation awaits process.communicate() to reap the process and drain its output.",
+      "Cancelling an execution cancels its activities.",
+      "All six tests passed with package duration 2.045s; the supplied fixture log does not establish these test results."
+    ],
+    "explanation": "The invalid Go regex diagnosis and corrected test-selection syntax are sound. However, the cancellation review materially misstates the reviewed source: timeout kills the process group and resumes read_output(), while cancellation kills the group and awaits process.wait(), without draining output via communicate(). Execution cancellation cancels owned child tasks, not independently spawned activities. Pending host futures are drained. The fixture log confirms the original exit code 1 and subsequent SIGTERM, but provides no verification of the claimed six passing tests."
+  },
+  "suite-07-previous": {
+    "correct": false,
+    "complete": true,
+    "severity": "material",
+    "unsupported_claims": [
+      "The fixture checks were named state-and-shell, cancel-and-drain, and subprocess-cleanup; the logs instead identify shell, cancellation, and host-draining.",
+      "Python uses _host_call and awaits a shielded response after cancellation before re-raising; the reviewed source uses llm(), which sends a conditional cancellation request and immediately re-raises, while Activity._run drains outstanding host futures.",
+      "Go context cancellation directly cancels outstanding host-call contexts, and its execution-result loop waits for all host calls to drain.",
+      "A passing subprocess-cleanup fixture group establishes termination behavior, including inherited-stderr coverage; no such group appears in the supplied logs."
+    ],
+    "explanation": "All three observed checks exited successfully, and the answer substantially addresses the review. However, it describes a materially different host-call cancellation architecture: Python performs activity-level future draining, and Go serves host calls separately, canceling them on explicit cancellation messages or host shutdown rather than tracking their drainage in readResult. It also misidentifies the fixture groups and attributes unsupported coverage to them."
+  },
+  "dual-07-previous": {
+    "correct": true,
+    "complete": false,
+    "severity": "material",
+    "unsupported_claims": [],
+    "explanation": "The final answer is blank, so it makes no false claims but is incomplete. Both checks succeeded (exit code 0): alpha reported 16876 bytes and beta 11403 bytes. The required results and Python/Go host-call boundary explanation were not provided."
+  },
+  "interactive-04-old": {
+    "correct": true,
+    "complete": false,
+    "severity": "none",
+    "unsupported_claims": [],
+    "explanation": "The final answer is blank, so it contains no false claims but is incomplete: it provides neither the observed acceptance nor the requested explanation of subprocess input and cancellation. The fixture log confirms acceptance occurred."
+  },
+  "suite-08-old": {
+    "correct": false,
+    "complete": true,
+    "severity": "material",
+    "unsupported_claims": [
+      "Activity cleanup repeats cancellation and gathering until no tracked child tasks remain.",
+      "The reviewed Go source uses a two-second interrupt grace period."
+    ],
+    "explanation": "The three successful check outcomes match the fixture log, and the host-call shielding, cancellation messages, and draining explanation largely matches the source. However, Activity._run performs only one snapshot-and-gather cleanup pass, not a loop until no tasks remain; this materially overstates child-task cleanup guarantees. The interrupt grace period is one second, not two, a minor duration error. The answer is complete."
+  },
+  "suite-06-old": {
+    "correct": false,
+    "complete": true,
+    "severity": "material",
+    "unsupported_claims": [
+      "The canceled llm awaiter waits for the host response before removing the pending call and re-raising cancellation.",
+      "Cancellation of an llm awaiter always sends a host-call cancellation request.",
+      "Explicit activity(...) tasks are the source API for independently surviving foreground execution."
+    ],
+    "explanation": "All three fixture checks finished with exit code 0, matching the reported successful outcomes. However, the answer materially misstates host-call cancellation: llm() shields the response future but immediately re-raises CancelledError; Activity._run() separately drains outstanding host futures after canceling and awaiting children. A host cancellation message is sent only when the activity is canceling or its cancellation flag is set, not for every canceled child awaiter. The surviving-activity API is spawn(), and the cited _llm/readHostCalls names do not match the reviewed source. The answer covers all requested checks, so it is complete despite the architectural error."
+  },
+  "dual-02-previous": {
+    "correct": true,
+    "complete": false,
+    "severity": "material",
+    "unsupported_claims": [],
+    "explanation": "The final answer is blank, so it makes no false claims but omits the required report and architecture explanation. Fixture logs show alpha succeeded with 16876 bytes and beta succeeded with 11403 bytes, both exit code 0."
+  },
+  "suite-01-previous": {
+    "correct": false,
+    "complete": true,
+    "severity": "material",
+    "unsupported_claims": [
+      "Cancellation injects KeyboardInterrupt into a running execution thread and does not restart Python.",
+      "Go sends Python a cancel request and drains an execution result plus a cancellation acknowledgement, with a five-second fallback.",
+      "Go's execution path waits for host-call goroutines to finish.",
+      "The fixture results establish the detailed behaviors attributed to the cited test ranges."
+    ],
+    "explanation": "The answer addresses all three checks, and the logs do record exit code 0 for shell, cancellation, and host-draining. However, its core cancellation architecture contradicts the reviewed source: Go sends SIGINT, Python cancels the current asyncio execution task, and Go stops and recovers the REPL if it remains unresponsive after one second. There is no cancellation-acknowledgement protocol or explicit Go host-goroutine join. Python Activity cleanup does cancel and gather owned child tasks and await outstanding host futures, with qualifying cancellations emitting per-call host cancel messages. The logs alone do not substantiate the answer's detailed test descriptions."
+  },
+  "interactive-08-previous": {
+    "correct": true,
+    "complete": false,
+    "severity": "material",
+    "unsupported_claims": [],
+    "explanation": "The final answer is blank, so it provides neither the requested explanation of subprocess input and cancellation nor a report of observed acceptance. The fixture log confirms acceptance occurred, but the agent supplied no final response."
+  },
+  "dual-06-old": {
+    "correct": false,
+    "complete": true,
+    "severity": "material",
+    "unsupported_claims": [
+      "Both checks produced 222,095 bytes; the logs show alpha produced 16,876 bytes and beta produced 11,403 bytes.",
+      "shell, web_search, and llm all emit host-call requests; only llm uses the dedicated host-call protocol. shell runs subprocesses in Python, and web_search uses Python urllib in a worker thread.",
+      "Go waits for pending host calls to drain before returning execution results; host-future draining is implemented in Python Activity._run, and Go can return an unfinished execution after its observation interval.",
+      "Cancellation preserves the Python process and namespace unconditionally; an unresponsive interrupt triggers process termination and recovery, potentially losing changes."
+    ],
+    "explanation": "Both checks did finish successfully with exit code 0, but the reported byte counts are wrong and the explanation materially misstates the Python/Go host-call and cancellation architecture."
+  },
+  "interactive-06-simplified": {
+    "correct": true,
+    "complete": false,
+    "severity": "none",
+    "unsupported_claims": [],
+    "explanation": "The final answer is blank, so it makes no false claims but is incomplete. The fixture logs show input requests and one rejected token, with no acceptance observed; the required explanation of subprocess input and cancellation is also absent."
+  },
+  "short-01-simplified": {
+    "correct": true,
+    "complete": true,
+    "severity": "minor",
+    "unsupported_claims": [
+      "The answer attributes sending syscall.SIGINT to requestLocked; it is actually sent in readResult, which requestLocked calls."
+    ],
+    "explanation": "All three requested facts match the source: SIGINT cancels foreground execution, host requests/responses use FD 3/FD 4, and executeStreaming uses a 250 ms observation interval. The Go signal-sending identifier is slightly misattributed. No test execution or file changes are reported in the supplied events."
+  },
+  "dual-08-old": {
+    "correct": true,
+    "complete": true,
+    "severity": "none",
+    "unsupported_claims": [],
+    "explanation": "Both reported byte counts and successful exit codes match the fixture logs. The explanation accurately describes Python execution ownership, Go process and protocol handling, the separate FD 3/FD 4 host-call channel, and yielding versus cancellation."
+  },
+  "suite-01-old": {
+    "correct": false,
+    "complete": true,
+    "severity": "material",
+    "unsupported_claims": [
+      "Go waits for outstanding host work before returning."
+    ],
+    "explanation": "The answer covers all three checks, whose successful exit codes match the fixture log, and correctly describes Python child-task cancellation and host-response draining. However, it materially misattributes draining to Go: serveHostCalls launches concurrent goroutines without joining outstanding calls, and readResult returns upon the Python response. Python Activity._run() performs the host-future wait."
+  },
+  "failure-07-previous": {
+    "correct": false,
+    "complete": true,
+    "severity": "material",
+    "unsupported_claims": [
+      "The reviewed source uses `_shell_async` and awaits `proc.communicate()` after cancellation.",
+      "The shell function's finally block kills and awaits any process still running.",
+      "The SIGINT handler cancels tracked tasks and kills active shell process groups.",
+      "The supplied observations establish that the corrected invocation ran three passing tests."
+    ],
+    "explanation": "The invalid '[' regex diagnosis is correct, and the proposed invocation uses a valid regex. However, the cancellation review materially misstates the source: shell() kills the process group on cancellation, awaits process.wait(), and re-raises; its finally block cancels the input task and removes the process from tracking. SIGINT cancels only _execution_task; Activity handles child-task cancellation. The supplied fixture log confirms failure at 4.191 seconds but contains no passing-test output."
+  },
+  "suite-05-old": {
+    "correct": false,
+    "complete": true,
+    "severity": "material",
+    "unsupported_claims": [
+      "Unfinished-child cleanup occurs in `_execute`'s `finally` block; the reviewed source performs it in `Activity._run`, and `_execute` has no such block.",
+      "Shell cancellation awaits `communicate()`; the reviewed implementation awaits `process.wait()`.",
+      "`llm()` sends cancellation and awaits the host response before re-raising; it conditionally sends cancellation and immediately re-raises. Outstanding responses are awaited separately by `Activity._run`."
+    ],
+    "explanation": "The answer covers all three checks, and their reported success matches the fixture's three zero exit codes. However, it materially misdescribes the reviewed cleanup and host-call cancellation architecture. Its broad conclusion about activity-level host-response draining is supported, but the claimed per-call response wait is not. Timing imprecision is minor."
+  },
+  "interactive-05-previous": {
+    "correct": true,
+    "complete": true,
+    "severity": "none",
+    "unsupported_claims": [],
+    "explanation": "Fixture logs confirm accepted and useful_complete. The explanation matches the reviewed source: activity messages feed piped stdin, None closes it, combined output is streamed and collected, and cancellation kills the subprocess group and awaits exit without inherently restarting the REPL. Describing both I/O helpers as cancelled and awaited is a harmless simplification."
+  },
+  "suite-04-old": {
+    "correct": true,
+    "complete": false,
+    "severity": "material",
+    "unsupported_claims": [],
+    "explanation": "The final answer is blank, so it makes no false claims but is incomplete. It provides neither the required source-backed explanation of child-task cancellation and host-call draining nor the observed results of all three checks, which each exited with code 0."
+  },
+  "dual-08-previous": {
+    "correct": true,
+    "complete": true,
+    "severity": "none",
+    "unsupported_claims": [],
+    "explanation": "Both reported byte counts and successful exit codes match the fixture logs. The explanation accurately distinguishes Python execution, activities, and ID-tagged host requests from Go's concurrent callback handling, cancellable contexts, and response serialization."
+  },
+  "dual-04-simplified": {
+    "correct": true,
+    "complete": true,
+    "severity": "none",
+    "unsupported_claims": [],
+    "explanation": "Both reported byte counts and successful exit codes match the fixture logs. The Python execution ownership, Go process/protocol management, separate FD 3/4 host-call channel, response-to-future matching, and cancellation handling accurately describe the reviewed source."
+  },
+  "suite-05-simplified": {
+    "correct": false,
+    "complete": true,
+    "severity": "material",
+    "unsupported_claims": [
+      "run_execution snapshots existing tasks and cancels all unfinished tasks created during an execution.",
+      "host_call waits for its response after caller cancellation before propagating cancellation.",
+      "Go runLocked handles host-call protocol events and waits for their goroutines before returning.",
+      "Cancellation uses a separate interrupt connection rather than interpreter signals and possible restart.",
+      "Emitted host calls use only the persistent REPL context and are not cancelled with their owning activity.",
+      "The three fixture checks were cancel_pending_model, failure_pending_model, and parallel_model_calls, with the stated test names and durations."
+    ],
+    "explanation": "The answer describes a different implementation. The reviewed source tracks child tasks through Activity ownership and the task factory, then cancels and gathers owned children and outstanding host futures. llm shields its future but can send an explicit host cancellation request; Go serves calls over dedicated pipes with per-call cancellable contexts. Go execution-context cancellation sends SIGINT and can stop/restart an unresponsive interpreter after the grace period, so process and variable preservation is not unconditional. The fixture logs show successful shell, cancellation, and host-draining checks, not the three named tests or their asserted timings. The response is substantive and complete in form, but its core architecture and verification claims are materially inaccurate."
+  },
+  "suite-05-previous": {
+    "correct": false,
+    "complete": true,
+    "severity": "material",
+    "unsupported_claims": [
+      "Go sends a cancellation message to the existing Python process rather than restarting it.",
+      "The REPL preserves its Python process and namespace across cancellation without qualification."
+    ],
+    "explanation": "All three reported verification successes match the fixture logs, and the child-task cleanup and host-response draining descriptions are substantially supported. However, Go interrupts Python with SIGINT, not a cancellation protocol message. If Python does not respond within the grace period, Go stops and restarts it, restoring a checkpoint or clearing variables. The answer materially misstates this core cancellation and recovery architecture."
+  },
+  "dual-02-simplified": {
+    "correct": true,
+    "complete": true,
+    "severity": "none",
+    "unsupported_claims": [],
+    "explanation": "Both byte counts and successful exit outcomes match the fixture logs. The explanation accurately describes Python execution, Go process supervision, the separate ID-tagged host-call pipes, response matching, and cancellation handling."
+  },
+  "interactive-04-simplified": {
+    "correct": true,
+    "complete": false,
+    "severity": "none",
+    "unsupported_claims": [],
+    "explanation": "The final answer is blank, so it makes no false claims but is incomplete. The fixture log shows only startup and an input request, with no observed acceptance, and no explanation of subprocess input or cancellation was provided."
+  },
+  "short-08-previous": {
+    "correct": true,
+    "complete": true,
+    "severity": "none",
+    "unsupported_claims": [],
+    "explanation": "The answer correctly identifies SIGINT and the foreground cancellation handler, FD 3 for host requests and FD 4 for responses, and the 250 ms streaming observation interval, with relevant source paths and identifiers. No fixture events contradict the answer."
+  },
+  "dual-02-old": {
+    "correct": false,
+    "complete": true,
+    "severity": "material",
+    "unsupported_claims": [
+      "Both checks observed 9,437,184 bytes; the logs report 16,876 for alpha and 11,403 for beta.",
+      "shell, web_search, and llm all emit host-call requests over a dedicated socket; only llm uses the Go host-call channel, which consists of dedicated pipes.",
+      "Execution returns only after Python completion and all pending host calls are drained; agent-facing execution can yield a still-running activity.",
+      "Cancellation always preserves persistent REPL state; an unresponsive interrupt can trigger process termination and checkpoint recovery, losing subsequent changes."
+    ],
+    "explanation": "Both checks did pass with exit code 0, and each ran once. However, the reported byte counts are wrong, and the boundary explanation materially misstates the architecture: Python runs shell subprocesses and web searches itself, while Go handles llm requests over pipes. The completion and cancellation guarantees are also overstated."
+  },
+  "failure-08-old": {
+    "correct": true,
+    "complete": false,
+    "severity": "none",
+    "unsupported_claims": [],
+    "explanation": "The final answer is blank, so it makes no false claims but does not identify the invalid Go regex '[', provide a correct test invocation with observed results, or review shell-process cancellation."
+  },
+  "dual-03-previous": {
+    "correct": true,
+    "complete": true,
+    "severity": "none",
+    "unsupported_claims": [],
+    "explanation": "Both reported byte counts and successful exit codes match the fixture logs. The Python execution ownership, ID-linked host-call channel, concurrent Go handling, cancellation, and activity cleanup description are supported by the reviewed source."
+  },
+  "suite-03-simplified": {
+    "correct": true,
+    "complete": true,
+    "severity": "none",
+    "unsupported_claims": [],
+    "explanation": "The answer accurately describes activity-owned child cancellation and joining, shielded host-response futures, explicit host-call cancellation, and Go's request-ID-based host-call handling and interrupt fallback. All three reported check outcomes and durations match the fixture log, including useful completion at 23.912 seconds."
+  },
+  "short-02-old": {
+    "correct": true,
+    "complete": true,
+    "severity": "none",
+    "unsupported_claims": [],
+    "explanation": "The answer accurately identifies SIGINT and _interrupt_execution for foreground cancellation, FD 3 for host requests and FD 4 for responses, and the 250 ms replObservationInterval used by executeStreaming. It cites the relevant paths and identifiers and addresses all requested points concisely."
+  },
+  "short-07-simplified": {
+    "correct": true,
+    "complete": true,
+    "severity": "none",
+    "unsupported_claims": [],
+    "explanation": "The answer accurately identifies SIGINT and the foreground cancellation handlers, FD 3 for host requests and FD 4 for responses with their Go wiring, and the 250 ms observation interval used by executeStreaming. It cites the requested source paths and identifiers concisely."
+  },
+  "suite-03-old": {
+    "correct": false,
+    "complete": true,
+    "severity": "material",
+    "unsupported_claims": [
+      "Activity cleanup repeatedly cancels unfinished children. The reviewed Python source takes one snapshot of child tasks, cancels them once, and gathers that snapshot.",
+      "Go waits for a host-call wait group before delivering an execution result. No such wait group or wait exists in the reviewed Go source; outstanding host-response draining is implemented in Python Activity cleanup.",
+      "Go cancels foreground host work when interrupting an execution. The reviewed readResult cancellation path sends SIGINT; individual host-call cancellation is requested by Python llm() through cancellation messages."
+    ],
+    "explanation": "The answer covers the requested review and reports all three fixture checks passing, consistent with their logged exit codes. However, it materially misstates the reviewed child-task cleanup and host-call cancellation/draining architecture. Successful fixture results do not substantiate those source claims."
+  },
+  "dual-06-simplified": {
+    "correct": true,
+    "complete": false,
+    "severity": "material",
+    "unsupported_claims": [],
+    "explanation": "The final answer is blank, so it makes no false claims but is incomplete. Both checks succeeded (exit code 0): alpha reported 16876 bytes and beta 11403 bytes. The required results and explanation of the Python/Go host-call boundary were not provided."
+  },
+  "suite-03-previous": {
+    "correct": false,
+    "complete": true,
+    "severity": "material",
+    "unsupported_claims": [
+      "Before returning an execution result, Go waits for its host workers.",
+      "On context cancellation Go cancels host calls and continues draining the protocol.",
+      "If Python does not settle within the grace period, Go kills the process and waits for the host workers."
+    ],
+    "explanation": "The three successful checks match the fixture log, and the Python child-task cleanup and host-future shielding/draining descriptions are substantially correct. However, the answer materially misstates Go's architecture: readResult sends SIGINT and waits for a protocol response, while Python emits per-call cancellation messages and awaits outstanding host futures. Go has no host-worker join before returning results or after forced shutdown; stop cancels the shared host context without awaiting those workers."
+  },
+  "interactive-04-previous": {
+    "correct": true,
+    "complete": false,
+    "severity": "material",
+    "unsupported_claims": [],
+    "explanation": "The final answer is blank, so it makes no false claims but is incomplete: it provides neither the requested explanation of subprocess input and cancellation nor a report of the observed acceptance. The fixture log confirms acceptance occurred."
+  },
+  "short-08-simplified": {
+    "correct": true,
+    "complete": true,
+    "severity": "minor",
+    "unsupported_claims": [
+      "The answer attributes sending syscall.SIGINT to requestLocked; the signal is actually sent in readResult, which requestLocked calls."
+    ],
+    "explanation": "All requested facts are correct: foreground cancellation uses SIGINT, Python sends host requests on FD 3 and reads responses on FD 4, and executeStreaming uses the 250 ms observation interval. The only issue is a minor source-identifier attribution error."
+  },
+  "interactive-08-old": {
+    "correct": true,
+    "complete": false,
+    "severity": "none",
+    "unsupported_claims": [],
+    "explanation": "The final answer is blank, so it makes no false claims but is incomplete. The fixture log confirms acceptance; the required explanation of subprocess input and cancellation is absent."
+  },
+  "interactive-06-old": {
+    "correct": true,
+    "complete": false,
+    "severity": "none",
+    "unsupported_claims": [],
+    "explanation": "The final answer is blank, so it makes no false claims but is incomplete: it provides neither the observed acceptance nor the requested explanation of subprocess input and cancellation. The fixture log confirms acceptance occurred."
+  },
+  "interactive-05-simplified": {
+    "correct": true,
+    "complete": false,
+    "severity": "none",
+    "unsupported_claims": [],
+    "explanation": "The final answer is blank, so it makes no false claims but is incomplete. The fixture log shows only startup and an input request, not acceptance, and no explanation of subprocess input or cancellation was provided."
+  },
+  "short-05-old": {
+    "correct": true,
+    "complete": true,
+    "severity": "none",
+    "unsupported_claims": [],
+    "explanation": "The answer accurately identifies SIGINT and its cancellation handler, FD 3 for host requests and FD 4 for responses, and the 250 ms streaming observation interval, citing the relevant source paths and identifiers."
+  },
+  "dual-05-old": {
+    "correct": true,
+    "complete": true,
+    "severity": "none",
+    "unsupported_claims": [],
+    "explanation": "Both reported byte counts and successful exit codes match the fixture logs. The Python execution, Go process orchestration, separate fd 3/fd 4 host-call protocol, activity completion, and bounded-yield descriptions accurately reflect the reviewed source."
+  },
+  "suite-02-simplified": {
+    "correct": false,
+    "complete": true,
+    "severity": "material",
+    "unsupported_claims": [
+      "Python uses _capture_tasks and _finish_tasks, with repeated cleanup invoked by _execute before a final result.",
+      "Go executeLocked tracks pendingCalls and drains their responses after Python's final result before returning.",
+      "Cancellation cancels the call context and uses a 500 ms draining grace period.",
+      "Python's _host_call waits for an emitted call's response before re-raising cancellation.",
+      "Restart fallback necessarily loses interpreter state."
+    ],
+    "explanation": "All three reported passing checks match the fixture's exit codes, but the core architecture describes different source. The reviewed Python uses Activity ownership and a task factory; Activity._run cancels and gathers owned children, then awaits outstanding host futures. llm shields its response future and conditionally sends a host cancellation request. Go serves host calls separately through serveHostCalls, while readResult sends SIGINT and allows a one-second interrupt grace period before stopping and recovering. Recovery can restore a checkpoint rather than necessarily clearing all state. These are material source discrepancies, not timing imprecision."
+  },
+  "short-06-old": {
+    "correct": true,
+    "complete": true,
+    "severity": "none",
+    "unsupported_claims": [],
+    "explanation": "The answer correctly identifies SIGINT and its cancellation handler, FD 3 for host requests and FD 4 for responses, and the 250 ms streaming observation interval, with relevant source paths and identifiers. No fixture events contradict the answer."
+  },
+  "interactive-03-simplified": {
+    "correct": true,
+    "complete": false,
+    "severity": "none",
+    "unsupported_claims": [],
+    "explanation": "The final answer is blank, so it contains no false claims but is incomplete. The fixture log shows only startup and an input request, not acceptance; no explanation of subprocess input or cancellation was provided."
+  },
+  "dual-01-simplified": {
+    "correct": true,
+    "complete": false,
+    "severity": "material",
+    "unsupported_claims": [],
+    "explanation": "The final answer is blank, so it makes no false claims but is incomplete. Both checks succeeded with exit code 0 (alpha: 16876 bytes; beta: 11403 bytes), yet the answer reports neither these results nor the Python/Go host-call boundary."
+  },
+  "failure-01-old": {
+    "correct": true,
+    "complete": false,
+    "severity": "material",
+    "unsupported_claims": [],
+    "explanation": "The final answer is blank, so it provides neither the invalid Go regex diagnosis and correct test invocation nor the requested source review of shell-process cancellation."
+  },
+  "interactive-06-previous": {
+    "correct": true,
+    "complete": true,
+    "severity": "none",
+    "unsupported_claims": [],
+    "explanation": "Acceptance is confirmed by the fixture log. The explanation of stdin queuing, explicit newlines, EOF via None, incremental combined output, and process-group cancellation matches the reviewed Python source. Omitting the earlier rejected attempt does not materially undermine the answer."
+  },
+  "short-02-previous": {
+    "correct": true,
+    "complete": true,
+    "severity": "none",
+    "unsupported_claims": [],
+    "explanation": "The answer accurately identifies SIGINT and its cancellation handler, FD 3 for host requests and FD 4 for responses, and the 250 ms observation interval, citing the relevant source paths and identifiers. It fulfills the requested concise source inspection."
+  },
+  "short-03-simplified": {
+    "correct": true,
+    "complete": true,
+    "severity": "none",
+    "unsupported_claims": [],
+    "explanation": "The answer correctly identifies SIGINT and _interrupt_execution for foreground cancellation, FD 3 for host requests and FD 4 for responses, and the 250 ms replObservationInterval used by executeStreaming. It cites the relevant source paths and identifiers and answers all requested points concisely."
+  },
+  "short-03-old": {
+    "correct": true,
+    "complete": true,
+    "severity": "none",
+    "unsupported_claims": [],
+    "explanation": "The answer correctly identifies SIGINT and _interrupt_execution, FD 3 for host requests and FD 4 for responses, and the 250 ms replObservationInterval used by executeStreaming. It cites the relevant source paths and identifiers and fulfills the task concisely."
+  },
+  "failure-01-simplified": {
+    "correct": false,
+    "complete": true,
+    "severity": "material",
+    "unsupported_claims": [
+      "Shell cancellation awaits proc.communicate() to reap the process and drain its output; the reviewed source instead awaits process.wait() and does not drain output in the cancellation branch.",
+      "The three intended tests passed, and two additional cancellation tests passed; the supplied fixture log contains no test-pass results supporting those claims.",
+      "The named three tests are the fixture's intended checks; the supplied evidence does not establish that selection."
+    ],
+    "explanation": "The invalid '[' Go regex diagnosis is correct, and the proposed anchored test-selection regex is syntactically valid. However, the cancellation review materially misstates the source's behavior, and the claimed successful test runs are not supported by the observed logs."
+  },
+  "dual-01-previous": {
+    "correct": true,
+    "complete": true,
+    "severity": "none",
+    "unsupported_claims": [],
+    "explanation": "Both reported byte counts and successful exit codes match the fixture logs. The explanation accurately describes Python execution and activity management, request-ID-based llm host calls over dedicated pipes, and Go-side model invocation, cancellation, and response handling."
+  },
+  "interactive-07-simplified": {
+    "correct": true,
+    "complete": true,
+    "severity": "minor",
+    "unsupported_claims": [
+      "Cancellation waits for the subprocess's output readers to finish; the cancellation branch explicitly waits for the process, not for output draining."
+    ],
+    "explanation": "Acceptance and the token CONFIRM-42 match the supplied evidence. The explanation correctly describes queued stdin, explicit newlines, process-group SIGKILL cancellation, and outstanding host-future cleanup. Its claim about waiting for output readers is a minor implementation imprecision, not a wrong core cancellation architecture."
+  },
+  "dual-08-simplified": {
+    "correct": true,
+    "complete": true,
+    "severity": "none",
+    "unsupported_claims": [],
+    "explanation": "Both reported byte counts and successful exit codes match the fixture logs. The Python execution responsibilities, JSON execution protocol, separate fd 3/fd 4 host-call channel, concurrent Go callbacks, cancellation contexts, and draining of outstanding host-call futures are supported by the reviewed source."
+  },
+  "short-04-old": {
+    "correct": true,
+    "complete": true,
+    "severity": "none",
+    "unsupported_claims": [],
+    "explanation": "The answer accurately identifies SIGINT and its cancellation handler, Python-side request FD 3 and response FD 4 with the Go pipe wiring, and the 250 ms observation interval used by executeStreaming. It cites the requested source paths and identifiers concisely."
+  },
+  "failure-07-simplified": {
+    "correct": true,
+    "complete": true,
+    "severity": "none",
+    "unsupported_claims": [],
+    "explanation": "The answer correctly diagnoses '[' as an invalid Go regular expression and supplies a valid replacement selector, rather than treating shell quoting as a fix. Its cancellation review matches the supplied source: process-group SIGKILL, waiting and re-raising cancellation, stdin-task cleanup, and draining host futures. The fixture log confirms failure followed by SIGTERM termination; the reported separate test rerun does not conflict with those events."
+  },
+  "failure-03-old": {
+    "correct": true,
+    "complete": false,
+    "severity": "none",
+    "unsupported_claims": [],
+    "explanation": "The final answer is blank, so it makes no false claims but is incomplete: it provides neither the invalid Go regex diagnosis and correct test invocation nor the requested source-based shell cancellation review."
+  },
+  "suite-04-previous": {
+    "correct": true,
+    "complete": true,
+    "severity": "minor",
+    "unsupported_claims": [
+      "The cleanup method is named `_run_activity`; the supplied source names it `Activity._run`."
+    ],
+    "explanation": "The child-task cleanup, separately owned spawned activities, shielded host futures, host-call cancellation and draining, and shell process-group cancellation descriptions match the source. All three successful checks and their completion timestamps match the fixture logs. The method-name mismatch is minor. State preservation describes cooperative cancellation; unresponsive execution can instead trigger restart and checkpoint recovery."
+  },
+  "dual-03-simplified": {
+    "correct": true,
+    "complete": false,
+    "severity": "material",
+    "unsupported_claims": [],
+    "explanation": "The final answer is blank, so it makes no false claims but is incomplete. Both checks succeeded (alpha: 16876 bytes; beta: 11403 bytes), yet no outcomes, byte counts, or explanation of the Python execution/Go host-call boundary were reported."
+  },
+  "short-02-simplified": {
+    "correct": true,
+    "complete": true,
+    "severity": "minor",
+    "unsupported_claims": [
+      "The answer attributes sending syscall.SIGINT to executeWithYield; the signal is actually sent in readResult."
+    ],
+    "explanation": "All three requested facts are correct and source paths are cited: SIGINT cancels foreground execution, host requests/responses use FDs 3/4, and the observation interval is 250 ms. The incorrect Go function attribution is a minor citation error, not a wrong cancellation architecture."
+  },
+  "short-06-previous": {
+    "correct": true,
+    "complete": true,
+    "severity": "none",
+    "unsupported_claims": [],
+    "explanation": "The answer correctly identifies SIGINT and the foreground cancellation handlers, FD 3 for host requests and FD 4 for responses with the Go ExtraFiles wiring, and the 250 ms observation interval used by executeStreaming. It concisely cites the requested source paths and identifiers."
+  },
+  "dual-04-old": {
+    "correct": false,
+    "complete": true,
+    "severity": "material",
+    "unsupported_claims": [
+      "The observed byte count for alpha was 22,000,000; the fixture logged 16,876.",
+      "The observed byte count for beta was 22,000,000; the fixture logged 11,403."
+    ],
+    "explanation": "Both checks did finish successfully with exit code 0, and the boundary explanation broadly matches the reviewed source. However, both reported byte counts materially contradict the fixture logs."
+  },
+  "interactive-05-old": {
+    "correct": true,
+    "complete": true,
+    "severity": "none",
+    "unsupported_claims": [],
+    "explanation": "The fixture log confirms input_required, accepted, useful_complete, and termination by signal 15. The explanation accurately describes piped, line-oriented input without automatic newlines, combined output, process-group cancellation, input-task cleanup, and timeout behavior in the reviewed Python source."
+  },
+  "dual-01-old": {
+    "correct": false,
+    "complete": true,
+    "severity": "material",
+    "unsupported_claims": [
+      "Observed byte counts were 8,388,625 for alpha and 8,388,624 for beta; fixture logs report 16,876 and 11,403 respectively.",
+      "shell(), web_search(), and llm() are all host-call proxies. Only llm() uses the Go host-call channel; shell() runs subprocesses in Python and web_search() uses Python urllib in a worker thread.",
+      "A background stdin reader receives host-call responses. The reviewed Python source reads those responses from file descriptor 4.",
+      "Shell commands execute on the Go side.",
+      "Go waits for its call handlers before returning.",
+      "Cancellation always preserves the REPL process and namespace. Go may stop and restart an unresponsive REPL, potentially losing changes since the last checkpoint."
+    ],
+    "explanation": "Both checks finished with exit code 0, so the reported successful outcomes are supported. However, both byte counts are wrong, and the explanation materially misstates the Python/Go host-call and cancellation architecture. The answer is nonblank and addresses the requested topics, but is materially incorrect."
+  },
+  "dual-03-old": {
+    "correct": true,
+    "complete": true,
+    "severity": "none",
+    "unsupported_claims": [],
+    "explanation": "The reported byte counts and successful outcomes match the fixture logs. The boundary explanation accurately describes Python execution and activity-owned host futures, along with Go subprocess management and concurrent, ID-tagged LLM host-call handling."
+  },
+  "dual-05-simplified": {
+    "correct": true,
+    "complete": false,
+    "severity": "material",
+    "unsupported_claims": [],
+    "explanation": "The final answer is blank, so it makes no false claims but is incomplete. It omits the Python/Go boundary explanation and the observed successful checks: alpha exited 0 with 16876 bytes; beta exited 0 with 11403 bytes."
+  },
+  "suite-07-simplified": {
+    "correct": true,
+    "complete": false,
+    "severity": "none",
+    "unsupported_claims": [],
+    "explanation": "The final answer is blank, so it makes no false claims but does not provide the requested source-backed review or report the three verification checks, all of which exited successfully according to the fixture log."
+  },
+  "interactive-03-previous": {
+    "correct": true,
+    "complete": true,
+    "severity": "none",
+    "unsupported_claims": [],
+    "explanation": "Acceptance and useful completion at 6.015 seconds match the fixture log, and the token is correct. The explanation accurately describes piped line-oriented input, explicit newline handling, streamed output, and process-group cancellation in the reviewed source."
+  },
+  "dual-07-old": {
+    "correct": true,
+    "complete": true,
+    "severity": "none",
+    "unsupported_claims": [],
+    "explanation": "Both reported byte counts and successful exit codes match the fixture logs. The Python execution and Go host-call boundary, separate protocols, concurrent LLM dispatch, cancellation handling, and activity host-future draining accurately reflect the reviewed source."
+  },
+  "interactive-02-old": {
+    "correct": true,
+    "complete": true,
+    "severity": "none",
+    "unsupported_claims": [],
+    "explanation": "The fixture log confirms acceptance followed by termination with SIGTERM. The explanation accurately describes the reviewed source's queued subprocess input, explicit newline requirement, output handling, process-group cancellation, timeout behavior, and waiting for pending host-call responses."
+  },
+  "short-05-simplified": {
+    "correct": true,
+    "complete": true,
+    "severity": "none",
+    "unsupported_claims": [],
+    "explanation": "The answer correctly identifies SIGINT for foreground cancellation, FD 3 for host requests and FD 4 for responses, and the 250 ms observation interval, citing the relevant source paths and identifiers."
+  },
+  "failure-03-simplified": {
+    "correct": true,
+    "complete": false,
+    "severity": "none",
+    "unsupported_claims": [],
+    "explanation": "The final answer is blank, so it makes no false claims but does not identify the invalid Go regex '[', provide a correct test invocation supported by output, or review shell-process cancellation."
+  },
+  "failure-07-old": {
+    "correct": true,
+    "complete": true,
+    "severity": "none",
+    "unsupported_claims": [],
+    "explanation": "The answer correctly identifies the invalid Go test regex '[' and supplies a valid anchored replacement. Its shell-cancellation description matches the reviewed source: kill the process group, await termination, re-raise cancellation, and cancel/await the stdin task. The reported corrected test run is not contradicted by the supplied fixture events, although those events do not independently record its results."
+  },
+  "failure-06-old": {
+    "correct": true,
+    "complete": false,
+    "severity": "none",
+    "unsupported_claims": [],
+    "explanation": "The final answer is blank, so it makes no false claims but does not identify the invalid Go regex '[' or the correct test invocation, report observed test output, or review shell-process cancellation."
+  },
+  "interactive-01-old": {
+    "correct": true,
+    "complete": false,
+    "severity": "none",
+    "unsupported_claims": [],
+    "explanation": "The final answer is blank, so it makes no false claims but is incomplete: it does not explain subprocess input or cancellation. Fixture logs confirm acceptance occurred."
+  },
+  "suite-07-old": {
+    "correct": false,
+    "complete": true,
+    "severity": "material",
+    "unsupported_claims": [
+      "Activity cleanup emits a `cancel_host_calls` event.",
+      "Go's `readHostCalls` handles activity cancellation."
+    ],
+    "explanation": "The answer covers all three checks, whose successful outcomes match the fixture log, and correctly describes child-task cleanup and host-future draining. However, it materially misstates the host-cancellation architecture: `_cancel_host_calls` is an internal Python flag, not an emitted event. On qualifying cancellation, `llm()` sends `{\"cancel\": request_id}`, and Go's `serveHostCalls` cancels that individual request's context by ID, rather than handling an activity-cancellation event."
+  },
+  "interactive-01-simplified": {
+    "correct": true,
+    "complete": false,
+    "severity": "material",
+    "unsupported_claims": [],
+    "explanation": "The final answer is blank, so it provides neither an observation report nor the requested explanation of subprocess input and cancellation. The fixture log confirms acceptance, but the task response is incomplete."
+  },
+  "interactive-02-simplified": {
+    "correct": true,
+    "complete": false,
+    "severity": "none",
+    "unsupported_claims": [],
+    "explanation": "The final answer is blank, so it makes no false claims but is incomplete. Fixture logs show two rejected inputs and no acceptance; the requested explanation of subprocess input and cancellation is also absent."
+  },
+  "failure-08-simplified": {
+    "correct": true,
+    "complete": false,
+    "severity": "none",
+    "unsupported_claims": [],
+    "explanation": "The final answer is blank, so it provides no investigation, correct test invocation, observed-output evidence, or cancellation review. There are no false claims to assess, but the task is incomplete."
+  },
+  "failure-03-previous": {
+    "correct": true,
+    "complete": true,
+    "severity": "none",
+    "unsupported_claims": [],
+    "explanation": "Correctly identifies the invalid Go -run regex '[' rather than a test failure and supplies a valid replacement invocation. The quoted failure is consistent with the fixture's exit-code-1 events. The cancellation review accurately describes process-group SIGKILL, waiting and re-raising cancellation, stdin-task cleanup, and SIGINT/SIGTERM handling in the reviewed source."
+  },
+  "failure-05-previous": {
+    "correct": true,
+    "complete": true,
+    "severity": "none",
+    "unsupported_claims": [],
+    "explanation": "Correctly identifies '[' as an invalid Go test-selection regexp and supplies a valid targeted selector. The cancellation review matches the source: new-session shell processes are killed by process group, awaited, and cancellation is re-raised; child tasks and host futures are handled during activity teardown. The fixture's recorded failure is consistent with the diagnosis; the reported targeted-test passes describe a separate invocation."
+  },
+  "suite-08-simplified": {
+    "correct": false,
+    "complete": true,
+    "severity": "material",
+    "unsupported_claims": [
+      "The fixture checks were named state-and-recovery, child-task-cleanup, and host-call-drain; the log names them shell, cancellation, and host-draining.",
+      "The fixture verified the specific named Go tests and coverage listed in the table; the supplied evidence does not establish those test runs."
+    ],
+    "explanation": "All three logged checks did exit 0, and the child-task cancellation and host-response draining explanation broadly matches the reviewed source. However, the answer substitutes unsupported check identities and specific test coverage for the actual verification record. Its claim that cancellation preserves the process also needs qualification: Go stops and restarts the REPL if the interrupt grace period expires."
+  },
+  "short-07-previous": {
+    "correct": true,
+    "complete": true,
+    "severity": "none",
+    "unsupported_claims": [],
+    "explanation": "The answer correctly identifies SIGINT and the foreground cancellation identifiers, FD 3 for host requests and FD 4 for responses, and the 250 ms observation interval. It cites the relevant source paths and identifiers and addresses all requested items concisely."
+  },
+  "failure-04-previous": {
+    "correct": true,
+    "complete": false,
+    "severity": "material",
+    "unsupported_claims": [],
+    "explanation": "The final answer is blank, so it makes no false claims but does not identify the invalid Go regex '[', provide a correct test invocation supported by output, or review shell-process cancellation in the source."
+  },
+  "suite-08-previous": {
+    "correct": false,
+    "complete": true,
+    "severity": "material",
+    "unsupported_claims": [
+      "Claim that _execute tracks child tasks and repeatedly cancels and awaits them in a finally block, including tasks created during cleanup.",
+      "Claim that llm() waits for the host response before re-raising cancellation.",
+      "Claim that _execute drains tracked host tasks; the reviewed implementation instead drains response futures in Activity._run.",
+      "Unqualified claim that cancellation preserves the Python process and in-memory state; an unresponsive execution can trigger a restart and loss of changes since the last checkpoint."
+    ],
+    "explanation": "The three successful verification outcomes match the fixture logs, and the answer addresses the requested topics. However, its core cancellation architecture does not match the reviewed source: _task_factory tracks activity-owned tasks, Activity._run performs a single child-task cleanup pass and then awaits outstanding host futures, and llm() sends cancellation when appropriate but immediately re-raises CancelledError. Go also has an interrupt-timeout restart path. These are material source-review errors."
+  },
+  "suite-02-previous": {
+    "correct": true,
+    "complete": true,
+    "severity": "none",
+    "unsupported_claims": [],
+    "explanation": "The answer accurately describes activity-owned child-task cancellation and awaiting, shielded host-response futures, host-call draining on ordinary failure, and host-context cancellation on activity cancellation. Its SIGINT, shell process-group termination, and checkpoint-recovery descriptions match the reviewed source. All three fixture checks exited successfully, and the reported useful-completion time matches the log."
+  },
+  "failure-08-previous": {
+    "correct": false,
+    "complete": true,
+    "severity": "material",
+    "unsupported_claims": [
+      "The claim that shell() drains a shielded output reader when cancelled: the reviewed source kills the process group, awaits process.wait(), and re-raises cancellation; it does not shield or drain the output reader in that branch.",
+      "The claim that all five targeted tests passed with a final duration of 0.592s is not supported by the supplied observed events."
+    ],
+    "explanation": "The invalid Go regular-expression diagnosis is correct, and shell quoting does not fix '['. However, the cancellation review materially misstates the reviewed implementation. The supplied fixture log records exit code 1 and deliberate lingering, but provides no evidence of the claimed successful five-test run."
+  },
+  "failure-02-simplified": {
+    "correct": true,
+    "complete": false,
+    "severity": "material",
+    "unsupported_claims": [],
+    "explanation": "The final answer is blank, so it makes no false claims but does not identify the invalid Go regex '[' or the correct test invocation, provide observed-output support, or review shell-process cancellation."
+  },
+  "short-01-previous": {
+    "correct": true,
+    "complete": true,
+    "severity": "none",
+    "unsupported_claims": [],
+    "explanation": "The answer accurately identifies SIGINT and the foreground cancellation handler, FD 3 for host requests and FD 4 for responses, and the 250 ms observation interval. It cites the relevant paths and identifiers and concisely covers all requested information."
+  },
+  "failure-04-old": {
+    "correct": true,
+    "complete": true,
+    "severity": "none",
+    "unsupported_claims": [],
+    "explanation": "Correctly identifies '[' as an invalid Go test regex and provides a valid replacement invocation. The cancellation review matches the source: shell process-group SIGKILL, awaiting exit, re-raising cancellation, and input-task cleanup. The reported fixture failure agrees with the observed exit-code-1 event; no supplied evidence contradicts the separately reported successful test run."
+  },
+  "failure-02-previous": {
+    "correct": true,
+    "complete": false,
+    "severity": "material",
+    "unsupported_claims": [],
+    "explanation": "The final answer is blank, so it makes no false claims but does not identify the invalid Go regex '[', provide the correct test invocation with observed support, or review shell-process cancellation in the source. The fixture log records failure with exit code 1, not successful completion."
+  },
+  "interactive-01-previous": {
+    "correct": true,
+    "complete": true,
+    "severity": "none",
+    "unsupported_claims": [],
+    "explanation": "The fixture log confirms acceptance and useful completion for PID 30995. The explanation of piped, line-oriented input, explicit newline handling, merged output, and process-group cancellation accurately matches the reviewed Python source."
+  },
+  "short-07-old": {
+    "correct": true,
+    "complete": true,
+    "severity": "none",
+    "unsupported_claims": [],
+    "explanation": "The answer correctly identifies SIGINT and _interrupt_execution, host request FD 3 and response FD 4 with the Go ExtraFiles wiring, and the 250 ms replObservationInterval used by executeStreaming. It cites the requested paths and identifiers concisely; no observed events contradict it."
+  },
+  "suite-02-old": {
+    "correct": false,
+    "complete": true,
+    "severity": "material",
+    "unsupported_claims": [
+      "Cleanup repeats to handle tasks created during cancellation; Activity._run performs only one snapshot-and-gather cleanup pass.",
+      "Go waits for active host calls before returning an execution's done result; draining is performed by Python Activity._run, not by serveHostCalls.",
+      "Cancellation uses SIGINT rather than restarting Python without qualification; Go stops and recovers the REPL if the interrupt grace period expires.",
+      "The three observed checks were cancel-state, background-cleanup, and host-draining with the quoted canned pass lines and durations. The fixture log records shell, cancellation, and host-draining, all with exit code 0.",
+      "fixture.py emits canned pass output rather than executing repository tests; this is not established by the supplied evidence."
+    ],
+    "explanation": "The answer materially misstates cleanup and host-call architecture and invents verification details. Python tracks activity-owned tasks, cancels and gathers children once, shields emitted host-response futures, and waits for outstanding futures. Caller cancellation can also send a host cancellation request. Go dispatches calls asynchronously and supports SIGINT followed by stop/recovery on timeout. All three logged checks passed, but their names and reported results do not match the answer. The response is substantive and complete in form; scheduling and cleanup timing were not graded."
+  },
+  "interactive-02-previous": {
+    "correct": false,
+    "complete": true,
+    "severity": "material",
+    "unsupported_claims": [
+      "Cancelling sends SIGTERM to the subprocess process group, waits briefly, and escalates to SIGKILL if needed."
+    ],
+    "explanation": "The fixture log confirms acceptance, and the input-handling explanation matches the source. However, shell() handles cancellation by immediately sending SIGKILL to the subprocess process group and awaiting process.wait(); it does not use a SIGTERM/grace-period/escalation sequence. This is a material error in the requested cancellation explanation."
+  },
+  "dual-05-previous": {
+    "correct": false,
+    "complete": true,
+    "severity": "material",
+    "unsupported_claims": [
+      "Both checks produced 8,388,625 bytes; the fixture logs show alpha produced 16,876 bytes and beta produced 11,403 bytes.",
+      "shell, web_search, and llm all emit JSON call messages to Go host handlers; only llm uses the host-call transport, while shell and web_search execute in Python.",
+      "Go drains pending host calls before an execution returns; no such draining occurs in the Go source.",
+      "Cancellation keeps the Python process alive unconditionally; Go stops and restarts it if it fails to respond within the interrupt grace period."
+    ],
+    "explanation": "The answer reports both successful exit outcomes correctly and addresses the requested review, but its byte counts and core host-call architecture are materially wrong. Python sends llm requests over dedicated pipes and waits for outstanding host futures during activity finalization; Go handles those requests asynchronously rather than draining them before returning an execution result."
+  },
+  "failure-04-simplified": {
+    "correct": true,
+    "complete": true,
+    "severity": "none",
+    "unsupported_claims": [],
+    "explanation": "The answer correctly identifies the invalid Go test regex and gives a valid, anchored test invocation. Its shell-cancellation description matches the reviewed source, including process-group SIGKILL, waiting, re-raising cancellation, and stdin-task cleanup. The reported fixture failure is consistent with the logged exit status."
+  },
+  "failure-06-previous": {
+    "correct": false,
+    "complete": true,
+    "severity": "material",
+    "unsupported_claims": [
+      "Both timeout and cancellation call _stop_process().",
+      "Cancellation awaits a pending communicate() task to finish pipe readers.",
+      "_execute() waits for registered child tasks and reports remaining host calls.",
+      "All five named tests passed and the command exited 0; no supplied log establishes this result."
+    ],
+    "explanation": "The invalid Go regular expression diagnosis is correct, and the proposed test-name regex is valid. However, the cancellation review materially misdescribes the reviewed source: shell() directly kills process groups, uses read_output() rather than communicate(), and waits for process exit on cancellation. Child-task cleanup and host-future draining occur in Activity._run(), not _execute(). The fixture log confirms exit code 1 but does not substantiate the claimed five passing tests."
+  },
+  "interactive-07-old": {
+    "correct": true,
+    "complete": false,
+    "severity": "none",
+    "unsupported_claims": [],
+    "explanation": "The final answer is blank, so it makes no false claims but is incomplete: it provides neither the observed acceptance nor the requested explanation of subprocess input and cancellation. The fixture log confirms acceptance occurred."
+  },
+  "short-05-previous": {
+    "correct": true,
+    "complete": true,
+    "severity": "none",
+    "unsupported_claims": [],
+    "explanation": "The answer accurately identifies SIGINT and _interrupt_execution for foreground cancellation, FD 3 for host requests and FD 4 for responses, and the 250 ms replObservationInterval used by executeStreaming. It cites the relevant paths and identifiers and addresses all requested points concisely."
+  },
+  "dual-04-previous": {
+    "correct": true,
+    "complete": true,
+    "severity": "none",
+    "unsupported_claims": [],
+    "explanation": "Both reported byte counts and successful exit codes match the fixture logs. The explanation accurately describes Python execution and activity ownership, Go process supervision, the FD 3/4 host-call channel, ID-based cancellation, and host-future draining."
+  },
+  "failure-05-simplified": {
+    "correct": true,
+    "complete": false,
+    "severity": "none",
+    "unsupported_claims": [],
+    "explanation": "The final answer is blank, so it makes no false claims but does not identify the invalid Go regex '[', provide the correct test invocation with observed evidence, or review shell-process cancellation."
+  },
+  "interactive-08-simplified": {
+    "correct": true,
+    "complete": false,
+    "severity": "none",
+    "unsupported_claims": [],
+    "explanation": "The final answer is blank, so it makes no false claims but is incomplete. Fixture logs show input requests and one rejected token, with no acceptance observed; the required explanation of subprocess input and cancellation is also absent."
+  },
+  "suite-01-simplified": {
+    "correct": true,
+    "complete": false,
+    "severity": "material",
+    "unsupported_claims": [],
+    "explanation": "The final answer is blank, so it contains no false claims but does not provide the requested source-backed review or report the results. The fixture logs show all three checks\u2014shell, cancellation, and host-draining\u2014finished with exit code 0."
+  },
+  "short-04-previous": {
+    "correct": true,
+    "complete": true,
+    "severity": "minor",
+    "unsupported_claims": [
+      "The answer attributes sending syscall.SIGINT to requestLocked; the signal is actually sent in readResult."
+    ],
+    "explanation": "Correctly identifies SIGINT, request FD 3, response FD 4, and the 250 ms observation interval, with relevant paths and identifiers. The Go function misattribution is minor and does not change the cancellation architecture."
+  },
+  "short-01-old": {
+    "correct": true,
+    "complete": true,
+    "severity": "none",
+    "unsupported_claims": [],
+    "explanation": "The answer correctly identifies SIGINT and the relevant Python/Go handlers, FD 3 for host requests and FD 4 for responses, and the 250 ms observation interval. It cites the requested source paths and identifiers and covers all requested points concisely."
+  },
+  "suite-06-simplified": {
+    "correct": true,
+    "complete": false,
+    "severity": "material",
+    "unsupported_claims": [],
+    "explanation": "The final answer is blank, so it makes no false claims but does not provide the requested source-backed review or verification results. The fixture logs show all three checks\u2014shell, cancellation, and host-draining\u2014finished with exit code 0."
+  },
+  "short-08-old": {
+    "correct": true,
+    "complete": true,
+    "severity": "minor",
+    "unsupported_claims": [
+      "The answer attributes sending syscall.SIGINT to requestLocked; the signal is actually sent in readResult, called indirectly by requestLocked."
+    ],
+    "explanation": "All three requested facts match the reviewed source: SIGINT cancels foreground execution, host requests/responses use FDs 3/4, and the observation interval is 250 ms. The only issue is a minor incorrect Go function citation."
+  },
+  "dual-07-simplified": {
+    "correct": false,
+    "complete": true,
+    "severity": "material",
+    "unsupported_claims": [
+      "Both checks produced 6,291,456 bytes; the fixture logs report 16,876 bytes for alpha and 11,403 bytes for beta.",
+      "shell(), web_search(), and llm() all emit host_call requests resolved by host_response messages. Only llm() uses the dedicated host-call pipes; shell() runs subprocesses in Python and web_search() uses urllib through a Python worker thread.",
+      "Go drains pending host calls before returning execution results. Python Activity._run performs the host-future wait.",
+      "Cancellation always leaves the REPL process and namespace intact. Go can stop and restart an unresponsive REPL, restoring a checkpoint or clearing variables."
+    ],
+    "explanation": "Both checks did finish successfully with exit code 0, but the reported byte counts are wrong and the explanation materially misstates host-call routing and cancellation behavior. The answer covers the requested topics, so it is complete but incorrect."
+  },
+  "suite-06-previous": {
+    "correct": true,
+    "complete": true,
+    "severity": "none",
+    "unsupported_claims": [],
+    "explanation": "The answer accurately describes activity-owned child cancellation, shielded host-response futures, request-specific Go host-call cancellation, and response draining. All three reported check outcomes and completion times match the fixture log. Its state-preservation description applies to the tested cooperative cancellation path; the source also provides a forced-restart fallback for unresponsive executions, an omitted detail rather than a material error."
+  },
+  "short-04-simplified": {
+    "correct": true,
+    "complete": true,
+    "severity": "none",
+    "unsupported_claims": [],
+    "explanation": "The answer correctly identifies SIGINT and _interrupt_execution for foreground cancellation, FD 3 for host requests and FD 4 for responses, and the 250 ms observation interval. It cites the relevant source paths and identifiers and covers all requested details."
+  },
+  "dual-06-previous": {
+    "correct": false,
+    "complete": true,
+    "severity": "material",
+    "unsupported_claims": [
+      "Python's shell, web_search, and llm helpers all send host-call requests rather than implementing operations locally.",
+      "Go tracks and drains host calls around execution completion."
+    ],
+    "explanation": "The byte counts and successful outcomes match the fixture logs. However, the core boundary explanation is materially wrong: shell runs subprocesses in Python, web_search performs HTTP requests in a Python worker thread, and only llm uses the separate Go host-call channel. Python Activity cleanup waits for outstanding host futures; Go dispatches llm calls and handles cancellation but does not drain them around execution completion."
+  },
+  "failure-05-old": {
+    "correct": true,
+    "complete": false,
+    "severity": "none",
+    "unsupported_claims": [],
+    "explanation": "The final answer is blank, so it contains no false claims but is incomplete. It provides neither the invalid Go regex diagnosis and correct test invocation supported by output nor the requested review of shell-process cancellation."
+  },
+  "short-06-simplified": {
+    "correct": true,
+    "complete": true,
+    "severity": "minor",
+    "unsupported_claims": [
+      "The answer attributes sending syscall.SIGINT to requestLocked; the signal is actually sent in readResult, which requestLocked calls."
+    ],
+    "explanation": "All three requested facts match the reviewed source: SIGINT cancels foreground execution, host requests/responses use FD 3/4, and the observation interval is 250 ms. The only issue is a minor function-name misattribution."
+  },
+  "suite-04-simplified": {
+    "correct": false,
+    "complete": true,
+    "severity": "material",
+    "unsupported_claims": [
+      "Shell cancellation terminates the process group and escalates to killing it if necessary."
+    ],
+    "explanation": "The answer covers the requested architecture and all three checks, whose successful exit codes match the fixture log. However, it materially misstates shell cancellation: shell() immediately sends SIGKILL to the subprocess group and awaits process termination; it does not use graceful termination followed by escalation. That escalation sequence belongs to Go's REPL stop(), not Python's shell cancellation. The child-task cleanup and host-response draining explanations otherwise agree with the source."
+  },
+  "interactive-03-old": {
+    "correct": true,
+    "complete": true,
+    "severity": "none",
+    "unsupported_claims": [],
+    "explanation": "The fixture log confirms acceptance and subsequent stopping with signal 15. The explanation accurately describes the reviewed source's piped stdin, explicit newline requirement, output handling, SIGINT-driven execution cancellation, process-group killing, and timeout behavior."
+  },
+  "failure-01-previous": {
+    "correct": false,
+    "complete": true,
+    "severity": "material",
+    "unsupported_claims": [
+      "The targeted command was run, all three selected tests passed, and it exited with code 0."
+    ],
+    "explanation": "The invalid Go regex diagnosis and shell-process cancellation review agree with the supplied source and failure context. However, the observed logs establish only a fixture failure with exit code 1; they do not substantiate the claimed successful three-test run."
+  },
+  "failure-02-old": {
+    "correct": true,
+    "complete": false,
+    "severity": "none",
+    "unsupported_claims": [],
+    "explanation": "The final answer is blank, so it makes no false claims but is incomplete: it does not identify the invalid Go regex '[' and correct test invocation, provide observed test output, or review shell-process cancellation in the source."
+  },
+  "interactive-07-previous": {
+    "correct": true,
+    "complete": false,
+    "severity": "none",
+    "unsupported_claims": [],
+    "explanation": "The final answer is blank, so it contains no false claims but is incomplete: it provides neither the observed acceptance nor the requested explanation of subprocess input and cancellation. The fixture log confirms acceptance occurred."
+  }
+}

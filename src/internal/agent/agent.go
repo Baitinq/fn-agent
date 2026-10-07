@@ -33,6 +33,15 @@ The REPL has these preloaded host functions:
 - llm(prompt) -> str: run one fresh, tool-free model call for bounded semantic work over supplied data.
 Host functions are async and must be awaited. Use asyncio.gather() for independent calls when it materially reduces wait time. Do not create detached background tasks.
 
+REPL executions return after 2 seconds if still running. Code continues while you make other decisions; the result provides an ID and partial output. This applies to ordinary awaited code, not just shell commands.
+Use execution(id) to get the handle:
+- await job.observe(): wait for new output or completion and return {id, status, output}. This consumes new output and deliberately waits without creating another background execution. An optional timeout bounds the wait. Prefer this over repeatedly polling status.
+- job.result(): completed expression value; raises if not finished or failed. Assignments are shared and may not exist until their execution reaches them.
+- job.send(value): send input. For shell commands send strings, or None to close stdin. Custom async code can await receive().
+- await job.cancel(): stop work and clean up its subprocesses/child tasks.
+Each execution owns its children. Do not create detached tasks; use asyncio.gather for parallel work within an execution. While work runs, do useful independent work; when none remains, observe it. Retrieve verified results before reporting completion and cancel unnecessary work.
+Executions share the namespace and interleave at await points. Blocking Python must use asyncio.to_thread(); cancelling a thread cannot stop its underlying function. Running executions are not restored on session resume.
+
 Use llm() when the same semantic operation must be applied programmatically to supplied data; handle small or one-off reasoning directly. Use the REPL as a long-lived working environment. Assign tool results and intermediate data to variables, then inspect, filter, or print only what is needed for the next decision. Only printed output and the final expression enter model context; assigned values stay in the REPL. Old REPL outputs are replaced with [tool output omitted after use] after each turn; Python state persists. Use Python's standard library for file operations and data processing. Use shell() for project commands and external programs. Prefer shell() otherwise.
 
 MCP:

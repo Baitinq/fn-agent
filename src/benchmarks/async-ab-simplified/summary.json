@@ -1,0 +1,413 @@
+{
+  "valid_trials": 120,
+  "replicates_per_case_arm": 8,
+  "arms": [
+    "old",
+    "previous",
+    "simplified"
+  ],
+  "model": "openai/gpt-6.1-sol",
+  "reasoning": "medium",
+  "baseline_commit": "6abb661",
+  "deadline_seconds": 150,
+  "concurrency": 4,
+  "order_seed": 43,
+  "bootstrap_seed": 314160,
+  "bootstrap_resamples": 10000,
+  "bootstrap_simplified_minus_comparator_ci95": {
+    "old": {
+      "success": [
+        -0.225,
+        0.075
+      ],
+      "seconds": [
+        6.359699137399998,
+        30.797998139475
+      ],
+      "calls": [
+        3.45,
+        12.75
+      ],
+      "input_tokens": [
+        15799.75,
+        85171.425
+      ]
+    },
+    "previous": {
+      "success": [
+        -0.35,
+        0
+      ],
+      "seconds": [
+        2.793329707125,
+        33.17446366345
+      ],
+      "calls": [
+        -0.875,
+        10.575
+      ],
+      "input_tokens": [
+        -16797.825,
+        67835.425
+      ]
+    }
+  },
+  "raw_artifacts": "src/benchmarks/runs/async-ab-simplified-20260930-162456",
+  "reviewed_source": "src/benchmarks/runs/async-ab-20260930-150114/review",
+  "summary": {
+    "old": {
+      "n": 40,
+      "success": 17,
+      "completed": 28,
+      "mechanical": 36,
+      "median_seconds": 82.7065225,
+      "mean_seconds": 84.18718604785,
+      "calls": 664,
+      "requests": 692,
+      "input_tokens": 4211287,
+      "cached_tokens": 1362371,
+      "output_tokens": 73626,
+      "errors": 7,
+      "alive_at_final": 0,
+      "alive_after_close": 0,
+      "observe_calls": 0,
+      "raw_process_runs": 23
+    },
+    "previous": {
+      "n": 40,
+      "success": 21,
+      "completed": 33,
+      "mechanical": 40,
+      "median_seconds": 83.939780437,
+      "mean_seconds": 84.532058807225,
+      "calls": 788,
+      "requests": 821,
+      "input_tokens": 5149376,
+      "cached_tokens": 1900343,
+      "output_tokens": 73744,
+      "errors": 8,
+      "alive_at_final": 0,
+      "alive_after_close": 0,
+      "observe_calls": 0,
+      "raw_process_runs": 1
+    },
+    "simplified": {
+      "n": 40,
+      "success": 14,
+      "completed": 22,
+      "mechanical": 33,
+      "median_seconds": 126.3265216245,
+      "mean_seconds": 102.863211345725,
+      "calls": 985,
+      "requests": 1007,
+      "input_tokens": 6200365,
+      "cached_tokens": 2266199,
+      "output_tokens": 73972,
+      "errors": 191,
+      "alive_at_final": 5,
+      "alive_after_close": 0,
+      "observe_calls": 33,
+      "raw_process_runs": 1
+    }
+  },
+  "cases": {
+    "suite": {
+      "old": {
+        "n": 8,
+        "success": 0,
+        "completed": 7,
+        "mechanical": 4,
+        "median_seconds": 86.96298206200001,
+        "mean_seconds": 94.748851963625,
+        "calls": 123,
+        "requests": 130,
+        "input_tokens": 1045958,
+        "cached_tokens": 259902,
+        "output_tokens": 21377,
+        "errors": 2,
+        "alive_at_final": 0,
+        "alive_after_close": 0,
+        "observe_calls": 0,
+        "raw_process_runs": 8
+      },
+      "previous": {
+        "n": 8,
+        "success": 3,
+        "completed": 8,
+        "mechanical": 8,
+        "median_seconds": 102.4786315415,
+        "mean_seconds": 107.314163400875,
+        "calls": 162,
+        "requests": 170,
+        "input_tokens": 1328563,
+        "cached_tokens": 401567,
+        "output_tokens": 23180,
+        "errors": 1,
+        "alive_at_final": 0,
+        "alive_after_close": 0,
+        "observe_calls": 0,
+        "raw_process_runs": 0
+      },
+      "simplified": {
+        "n": 8,
+        "success": 1,
+        "completed": 5,
+        "mechanical": 8,
+        "median_seconds": 127.85584714550001,
+        "mean_seconds": 128.672476301875,
+        "calls": 177,
+        "requests": 182,
+        "input_tokens": 1381717,
+        "cached_tokens": 415770,
+        "output_tokens": 20580,
+        "errors": 7,
+        "alive_at_final": 0,
+        "alive_after_close": 0,
+        "observe_calls": 3,
+        "raw_process_runs": 0
+      }
+    },
+    "failure": {
+      "old": {
+        "n": 8,
+        "success": 2,
+        "completed": 2,
+        "mechanical": 8,
+        "median_seconds": 150.0071398545,
+        "mean_seconds": 141.355047874875,
+        "calls": 218,
+        "requests": 220,
+        "input_tokens": 1183608,
+        "cached_tokens": 441857,
+        "output_tokens": 21132,
+        "errors": 2,
+        "alive_at_final": 0,
+        "alive_after_close": 0,
+        "observe_calls": 0,
+        "raw_process_runs": 7
+      },
+      "previous": {
+        "n": 8,
+        "success": 2,
+        "completed": 6,
+        "mechanical": 8,
+        "median_seconds": 104.1798687495,
+        "mean_seconds": 106.762180906125,
+        "calls": 186,
+        "requests": 192,
+        "input_tokens": 1043567,
+        "cached_tokens": 444884,
+        "output_tokens": 19255,
+        "errors": 2,
+        "alive_at_final": 0,
+        "alive_after_close": 0,
+        "observe_calls": 0,
+        "raw_process_runs": 0
+      },
+      "simplified": {
+        "n": 8,
+        "success": 1,
+        "completed": 4,
+        "mechanical": 7,
+        "median_seconds": 138.6171112705,
+        "mean_seconds": 125.96646494775,
+        "calls": 223,
+        "requests": 227,
+        "input_tokens": 1261783,
+        "cached_tokens": 512848,
+        "output_tokens": 19060,
+        "errors": 23,
+        "alive_at_final": 0,
+        "alive_after_close": 0,
+        "observe_calls": 12,
+        "raw_process_runs": 1
+      }
+    },
+    "interactive": {
+      "old": {
+        "n": 8,
+        "success": 3,
+        "completed": 3,
+        "mechanical": 8,
+        "median_seconds": 150.0061865,
+        "mean_seconds": 116.66313127075,
+        "calls": 261,
+        "requests": 264,
+        "input_tokens": 1627940,
+        "cached_tokens": 529675,
+        "output_tokens": 22351,
+        "errors": 0,
+        "alive_at_final": 0,
+        "alive_after_close": 0,
+        "observe_calls": 0,
+        "raw_process_runs": 8
+      },
+      "previous": {
+        "n": 8,
+        "success": 4,
+        "completed": 5,
+        "mechanical": 8,
+        "median_seconds": 67.57254079149999,
+        "mean_seconds": 93.364258604125,
+        "calls": 217,
+        "requests": 222,
+        "input_tokens": 1248367,
+        "cached_tokens": 517465,
+        "output_tokens": 12048,
+        "errors": 3,
+        "alive_at_final": 0,
+        "alive_after_close": 0,
+        "observe_calls": 0,
+        "raw_process_runs": 0
+      },
+      "simplified": {
+        "n": 8,
+        "success": 1,
+        "completed": 1,
+        "mechanical": 2,
+        "median_seconds": 150.0081462915,
+        "mean_seconds": 136.86371134375,
+        "calls": 318,
+        "requests": 319,
+        "input_tokens": 1684071,
+        "cached_tokens": 723123,
+        "output_tokens": 14519,
+        "errors": 112,
+        "alive_at_final": 5,
+        "alive_after_close": 0,
+        "observe_calls": 15,
+        "raw_process_runs": 0
+      }
+    },
+    "dual": {
+      "old": {
+        "n": 8,
+        "success": 4,
+        "completed": 8,
+        "mechanical": 8,
+        "median_seconds": 43.4698298335,
+        "mean_seconds": 53.59314024475,
+        "calls": 42,
+        "requests": 50,
+        "input_tokens": 262615,
+        "cached_tokens": 88857,
+        "output_tokens": 5727,
+        "errors": 3,
+        "alive_at_final": 0,
+        "alive_after_close": 0,
+        "observe_calls": 0,
+        "raw_process_runs": 0
+      },
+      "previous": {
+        "n": 8,
+        "success": 4,
+        "completed": 6,
+        "mechanical": 8,
+        "median_seconds": 94.29413335449999,
+        "mean_seconds": 99.402253713625,
+        "calls": 207,
+        "requests": 213,
+        "input_tokens": 1443143,
+        "cached_tokens": 497291,
+        "output_tokens": 16288,
+        "errors": 2,
+        "alive_at_final": 0,
+        "alive_after_close": 0,
+        "observe_calls": 0,
+        "raw_process_runs": 1
+      },
+      "simplified": {
+        "n": 8,
+        "success": 3,
+        "completed": 4,
+        "mechanical": 8,
+        "median_seconds": 135.278303875,
+        "mean_seconds": 108.40648605187499,
+        "calls": 250,
+        "requests": 254,
+        "input_tokens": 1787795,
+        "cached_tokens": 574270,
+        "output_tokens": 16811,
+        "errors": 49,
+        "alive_at_final": 0,
+        "alive_after_close": 0,
+        "observe_calls": 3,
+        "raw_process_runs": 0
+      }
+    },
+    "short": {
+      "old": {
+        "n": 8,
+        "success": 8,
+        "completed": 8,
+        "mechanical": 8,
+        "median_seconds": 12.951651375,
+        "mean_seconds": 14.57575888525,
+        "calls": 20,
+        "requests": 28,
+        "input_tokens": 91166,
+        "cached_tokens": 42080,
+        "output_tokens": 3039,
+        "errors": 0,
+        "alive_at_final": 0,
+        "alive_after_close": 0,
+        "observe_calls": 0,
+        "raw_process_runs": 0
+      },
+      "previous": {
+        "n": 8,
+        "success": 8,
+        "completed": 8,
+        "mechanical": 8,
+        "median_seconds": 13.730832270499999,
+        "mean_seconds": 15.817437411375,
+        "calls": 16,
+        "requests": 24,
+        "input_tokens": 85736,
+        "cached_tokens": 39136,
+        "output_tokens": 2973,
+        "errors": 0,
+        "alive_at_final": 0,
+        "alive_after_close": 0,
+        "observe_calls": 0,
+        "raw_process_runs": 0
+      },
+      "simplified": {
+        "n": 8,
+        "success": 8,
+        "completed": 8,
+        "mechanical": 8,
+        "median_seconds": 13.780305021,
+        "mean_seconds": 14.406918083375,
+        "calls": 17,
+        "requests": 25,
+        "input_tokens": 84999,
+        "cached_tokens": 40188,
+        "output_tokens": 3002,
+        "errors": 0,
+        "alive_at_final": 0,
+        "alive_after_close": 0,
+        "observe_calls": 0,
+        "raw_process_runs": 0
+      }
+    }
+  },
+  "notes": "All arms use same frozen reviewed source and fixtures as first experiment. Removing private obsolete helpers and renaming owner after runs was semantics-neutral and unit-tested, not re-benchmarked.",
+  "sources": {
+    "old": {
+      "agent.go": "5d56059b920e1da5991e09b6e79987e2e26c60bb3494ccc1427b019419152746",
+      "repl.py": "d1117dd3de8f3259abaf0abfccbdaa026d2f62477adb0a6bec088a4ca1ca5131",
+      "repl.go": "71505e2b2be5ab99c75d3c0551ad21291db259aed0825bb13601a83ace2bb9d7"
+    },
+    "previous": {
+      "agent.go": "c3755e6670cade841baafab5cbbdbaf0f1bc4c64bd84991ff65635d99b6f18eb",
+      "repl.py": "2decd7678d49e531e94eb9d267ac10f44dd66d945390a4d4bba417633a7c0e4b",
+      "repl.go": "dac4093346b50e04fd4690c6e96d7fde0ff08a55446ab8ed3070ec7970fba81c"
+    },
+    "simplified": {
+      "agent.go": "d9e55b7d1c9417f08b58cbfe97ee76356700b99f1782e0e4558225af31466a69",
+      "repl.py": "a378fc893ae4b9456c464c1bc04ae08206478065909f36a26c79fc743bf5771f",
+      "repl.go": "2a595e3e470bb3138fea891d2febedd2b854fc5c240cd6b1b6fafb173880f747"
+    }
+  }
+}

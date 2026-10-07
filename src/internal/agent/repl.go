@@ -20,6 +20,7 @@ import (
 var pythonREPLScript string
 
 const (
+	replObservationInterval  = 2 * time.Second
 	replInterruptGracePeriod = time.Second
 	replCheckpointTimeout    = 5 * time.Second
 	replStreamInterval       = 50 * time.Millisecond
@@ -40,16 +41,18 @@ type pythonREPL struct {
 	checkpointObjects string
 	recoveryReason    error
 	notices           []string
+	hostCancel        context.CancelFunc
+	hostInput         *os.File
+	hostOutput        *os.File
 }
 
 type replResult struct {
-	Output   string `json:"output"`
-	Error    bool   `json:"error"`
-	HostCall string `json:"host_call"`
-	ID       int    `json:"id"`
-	Prompt   string `json:"prompt"`
-	Stream   string `json:"stream"`
-	Progress string `json:"progress"`
+	Output      string `json:"output"`
+	Error       bool   `json:"error"`
+	ExecutionID int    `json:"execution_id"`
+	Status      string `json:"status"`
+	Stream      string `json:"stream"`
+	Progress    string `json:"progress"`
 }
 
 func newPythonREPL(llm func(context.Context, string) (string, error)) *pythonREPL {
@@ -74,10 +77,27 @@ func (r *pythonREPL) startProcess() error {
 		_ = stdin.Close()
 		return err
 	}
+	hostInput, pythonOutput, err := os.Pipe()
+	if err != nil {
+		return err
+	}
+	defer pythonOutput.Close()
+	pythonInput, hostOutput, err := os.Pipe()
+	if err != nil {
+		hostInput.Close()
+		return err
+	}
+	defer pythonInput.Close()
+	cmd.ExtraFiles = []*os.File{pythonOutput, pythonInput}
 	cmd.Stderr = &r.stderr
 	if err := cmd.Start(); err != nil {
+		hostInput.Close()
+		hostOutput.Close()
 		return fmt.Errorf("start Python REPL: %w", err)
 	}
+	hostCtx, hostCancel := context.WithCancel(context.Background())
+	r.hostCancel, r.hostInput, r.hostOutput = hostCancel, hostInput, hostOutput
+	go r.serveHostCalls(hostCtx, hostInput, hostOutput)
 	r.cmd = cmd
 	r.stdin = stdin
 	r.stdout = bufio.NewReader(stdout)
@@ -91,7 +111,6 @@ func (r *pythonREPL) stop() {
 	}
 	r.recoveryReason = errors.New("Python REPL stopped")
 	_ = r.stdin.Close()
-	_ = syscall.Kill(-r.cmd.Process.Pid, syscall.SIGTERM)
 	wait := make(chan struct{})
 	go func(cmd *exec.Cmd) {
 		_ = cmd.Wait()
@@ -100,10 +119,18 @@ func (r *pythonREPL) stop() {
 	select {
 	case <-wait:
 	case <-time.After(replInterruptGracePeriod):
-		_ = syscall.Kill(-r.cmd.Process.Pid, syscall.SIGKILL)
-		<-wait
+		_ = syscall.Kill(-r.cmd.Process.Pid, syscall.SIGTERM)
+		select {
+		case <-wait:
+		case <-time.After(replInterruptGracePeriod):
+			_ = syscall.Kill(-r.cmd.Process.Pid, syscall.SIGKILL)
+			<-wait
+		}
 	}
 	_ = syscall.Kill(-r.cmd.Process.Pid, syscall.SIGKILL)
+	r.hostCancel()
+	r.hostInput.Close()
+	r.hostOutput.Close()
 	r.cmd, r.stdin, r.stdout = nil, nil, nil
 }
 
@@ -167,12 +194,17 @@ func (r *pythonREPL) takeNotices() []string {
 	return notices
 }
 
+// execute waits for completion; agent-facing calls use a bounded observation interval.
 func (r *pythonREPL) execute(ctx context.Context, code string) (string, bool, error) {
-	return r.executeStreaming(ctx, code, func(string, bool) {})
+	return r.executeWithYield(ctx, code, nil, func(string, bool) {})
 }
 
-// executeStreaming reports printed output, and shell() progress with progress set.
+// executeStreaming yields unfinished executions after a short observation interval.
 func (r *pythonREPL) executeStreaming(ctx context.Context, code string, stream func(text string, progress bool)) (string, bool, error) {
+	return r.executeWithYield(ctx, code, replObservationInterval.Seconds(), stream)
+}
+
+func (r *pythonREPL) executeWithYield(ctx context.Context, code string, seconds any, stream func(text string, progress bool)) (string, bool, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if err := ctx.Err(); err != nil {
@@ -181,7 +213,7 @@ func (r *pythonREPL) executeStreaming(ctx context.Context, code string, stream f
 	if err := r.start(); err != nil {
 		return "", false, err
 	}
-	output, failed, err := r.requestLocked(ctx, map[string]string{"code": code}, stream)
+	output, failed, err := r.requestLocked(ctx, map[string]any{"code": code, "yield_seconds": seconds}, stream)
 	if err != nil {
 		return output, failed, r.recover(err)
 	}
@@ -245,7 +277,7 @@ func (r *pythonREPL) operationLocked(ctx context.Context, op, path, objectsPath 
 	return nil
 }
 
-func (r *pythonREPL) requestLocked(ctx context.Context, request map[string]string, stream func(string, bool)) (string, bool, error) {
+func (r *pythonREPL) requestLocked(ctx context.Context, request any, stream func(string, bool)) (string, bool, error) {
 	payload, err := json.Marshal(request)
 	if err != nil {
 		return "", false, err
@@ -268,7 +300,6 @@ func (r *pythonREPL) readResult(ctx context.Context, stream func(string, bool)) 
 		line []byte
 		err  error
 	}
-	hostCallError := make(chan error, 1)
 	cancel := ctx.Done()
 	var canceled error
 	var interruptDeadline <-chan time.Time
@@ -301,9 +332,6 @@ func (r *pythonREPL) readResult(ctx context.Context, stream func(string, bool)) 
 				r.stop()
 				<-read
 				return "", true, errors.Join(errREPLInterruptTimeout, canceled)
-			case err := <-hostCallError:
-				r.stop()
-				return "", true, err
 			case <-flush:
 				flushPending()
 			case result = <-read:
@@ -337,29 +365,59 @@ func (r *pythonREPL) readResult(ctx context.Context, stream func(string, bool)) 
 			continue
 		}
 		flushPending()
-		if response.HostCall == "llm" {
-			go r.runLLMHostCall(ctx, r.stdin, response.ID, response.Prompt, hostCallError)
-			continue
-		}
 		if canceled != nil {
 			return "", true, canceled
+		}
+		if response.ExecutionID != 0 {
+			return fmt.Sprintf("Execution %d is %s. Use execution(%d) to observe output/completion, retrieve the result, send input, or cancel.\n%s", response.ExecutionID, response.Status, response.ExecutionID, response.Output), false, nil
 		}
 		return response.Output, response.Error, nil
 	}
 }
 
-func (r *pythonREPL) runLLMHostCall(ctx context.Context, stdin io.Writer, id int, prompt string, hostCallError chan<- error) {
-	text, callErr := r.llm(ctx, prompt)
-	hostResponse := map[string]any{"id": id, "result": text}
-	if callErr != nil {
-		hostResponse = map[string]any{"id": id, "error": callErr.Error()}
-	}
-	data, _ := json.Marshal(hostResponse)
-	if _, err := r.writeTo(stdin, append(data, '\n')); err != nil {
-		select {
-		case hostCallError <- err:
-		default:
+func (r *pythonREPL) serveHostCalls(ctx context.Context, input io.Reader, output io.Writer) {
+	var mu sync.Mutex
+	calls := make(map[int]context.CancelFunc)
+	decoder := json.NewDecoder(input)
+	encoder := json.NewEncoder(output)
+	for {
+		var request struct {
+			ID     int    `json:"id"`
+			Prompt string `json:"prompt"`
+			Cancel int    `json:"cancel"`
 		}
+		if err := decoder.Decode(&request); err != nil {
+			return
+		}
+		mu.Lock()
+		if request.Cancel != 0 {
+			if cancel := calls[request.Cancel]; cancel != nil {
+				cancel()
+			}
+			mu.Unlock()
+			continue
+		}
+		callCtx, cancel := context.WithCancel(ctx)
+		calls[request.ID] = cancel
+		mu.Unlock()
+		go func(id int, prompt string) {
+			defer cancel()
+			var text string
+			var err error
+			if r.llm == nil {
+				err = errors.New("llm host function is unavailable")
+			} else {
+				text, err = r.llm(callCtx, prompt)
+			}
+			response := map[string]any{"id": id, "result": text}
+			if err != nil {
+				response = map[string]any{"id": id, "error": err.Error()}
+			}
+			mu.Lock()
+			defer mu.Unlock()
+			delete(calls, id)
+			_ = encoder.Encode(response)
+		}(request.ID, request.Prompt)
 	}
 }
 

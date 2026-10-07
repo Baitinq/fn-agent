@@ -1,0 +1,41 @@
+package main
+import (
+ "context"
+ "bytes"
+ "encoding/json"
+ "flag"
+ "os"
+ "path/filepath"
+ "sync"
+ "syscall"
+ "time"
+ "github.com/Baitinq/fn-agent/src/internal/agent"
+)
+func main() {
+ dir := flag.String("dir", "", "sandbox")
+ prompt := flag.String("prompt", "", "prompt file")
+ output := flag.String("output", "", "output file")
+ timeout := flag.Duration("timeout", 150*time.Second, "timeout")
+ flag.Parse()
+ if err := os.Chdir(*dir); err != nil { panic(err) }
+ a, err := agent.New(); if err != nil { panic(err) }
+ if err := a.StartSession("trial",filepath.Join(*dir,"sessions")); err != nil { panic(err) }
+ f, err := os.Create(*output); if err != nil { panic(err) }; defer f.Close()
+ encoder := json.NewEncoder(f); var mu sync.Mutex
+ start := time.Now()
+ log := func(v map[string]any) { mu.Lock(); defer mu.Unlock(); v["elapsed"] = time.Since(start).Seconds(); if err:=encoder.Encode(v);err!=nil {panic(err)} }
+ log(map[string]any{"kind":"start", "model":a.ModelName(), "reasoning":a.ReasoningEffort()})
+ p, err := os.ReadFile(*prompt); if err != nil {panic(err)}
+ ctx,cancel := context.WithTimeout(context.Background(),*timeout); defer cancel()
+ response:=a.Respond(string(p),nil,func(e agent.ToolEvent){log(map[string]any{"kind":"tool","event":e})},ctx)
+ live := func() []int {
+  bytes,_:=os.ReadFile("fixture-events.jsonl"); seen:=map[int]bool{}; var alive []int
+  for _,line:=range bytesToLines(bytes) {var e struct{PID int `json:"pid"`};if json.Unmarshal(line,&e)==nil && e.PID!=0 {seen[e.PID]=true}}
+  for pid:=range seen {if syscall.Kill(pid,0)==nil {alive=append(alive,pid)}}
+  return alive
+ }
+ log(map[string]any{"kind":"final","response":response,"usage":a.Usage(),"context_error":ctx.Err(),"alive_before_close":live()})
+ a.Close()
+ log(map[string]any{"kind":"closed","alive_after_close":live()})
+}
+func bytesToLines(b []byte) [][]byte {return bytes.Split(b,[]byte("\n"))}

@@ -787,10 +787,10 @@ func TestPythonREPLPreservesStateWhenCancellationOvertakesLLMDispatch(t *testing
 
 	code := fmt.Sprintf(`
 import os, signal, time
-protocol_out = llm.__globals__["_protocol_out"]
+protocol_out = llm.__globals__["_host_out"]
 class DelayedHostCall:
     def write(self, data):
-        if '"host_call"' in data:
+        if '"prompt"' in data:
             signal.signal(signal.SIGINT, signal.SIG_IGN)
             open(%q, "w").close()
             while not os.path.exists(%q):
@@ -798,7 +798,7 @@ class DelayedHostCall:
         return protocol_out.write(data)
     def flush(self):
         protocol_out.flush()
-llm.__globals__["_protocol_out"] = DelayedHostCall()
+llm.__globals__["_host_out"] = DelayedHostCall()
 preserved = 42
 await llm("stale")`, marker, release)
 
@@ -1143,7 +1143,11 @@ func TestPythonREPLIgnoresInterruptWhileIdle(t *testing.T) {
 func TestPythonREPLShellDoesNotInheritProtocolInput(t *testing.T) {
 	repl := newPythonREPL(nil)
 	t.Cleanup(repl.close)
-	output, failed, err := repl.execute(t.Context(), `result = await shell("if read line; then printf data; else printf eof; fi", 0.1); (result.stdout, result.exit_code, result.error)`)
+	output, failed, err := repl.execute(t.Context(), `import asyncio
+async def close_input():
+    execution.__globals__["_activity_context"].get().send(None)
+_, result = await asyncio.gather(close_input(), shell("if read line; then printf data; else printf eof; fi"))
+(result.stdout, result.exit_code, result.error)`)
 	if err != nil || failed || output != "('eof', 0, None)" {
 		t.Fatalf("shell result = %q, failed=%v, error=%v", output, failed, err)
 	}

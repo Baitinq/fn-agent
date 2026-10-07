@@ -18,6 +18,31 @@ the agent can keep large state outside model context and inspect only what it ne
 The agent loop stays explicit: one model-facing REPL tool, a few composable functions,
 and no framework hidden underneath.
 
+## Experimental: yielding executions
+
+**Experimental, not a demonstrated performance improvement.** The repeated benchmark in [async-ab-simplified](src/benchmarks/async-ab-simplified/README.md) found worse completion and more overhead with the simplified interface.
+
+REPL executions get a 2-second observation interval. If still running, they return an execution ID and partial output while Python continues. The tool only takes `code`; no separate wait flag or public spawned-activity API is needed.
+
+```python
+result = await shell("go test ./...")
+print(result.stdout)
+```
+
+If execution 12 is still running:
+
+```python
+job = execution(12)
+await job.observe()        # Wait for output/completion; returns {id, status, output}.
+job.result()               # Completed final expression value, or exception.
+job.send("input\n")        # Write shell stdin; None closes it.
+await job.cancel()         # Stop execution and clean up child work.
+```
+
+`observe(timeout=...)` bounds deliberate waiting. Observation consumes output, so use its returned `output` rather than calling `read()` again. While an observation is waiting, that REPL call does not yield another execution. Work shares one namespace and interleaves at `await` points; assignments may not exist yet. Running executions are not restored across sessions. Blocking Python must use `asyncio.to_thread()`; cancelling a thread cannot forcibly stop its underlying function. Shell stdin uses pipes, not a PTY.
+
+Try the [manual scheduling scenario](src/testdata/async-manual.md) to inspect actual model behavior, not just execution mechanics.
+
 ## Benchmarks
 
 fn is evaluated against Pi and Codex with `gpt-5.6-sol` at medium reasoning.
