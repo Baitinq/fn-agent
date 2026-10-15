@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -42,7 +43,8 @@ func TestAnthropicRespondExecutesToolAndPreservesThinkingSignature(t *testing.T)
 			fmt.Fprintln(w, `data: {"type":"content_block_start","index":1,"content_block":{"type":"tool_use","id":"tool_1","name":"repl","input":{}}}`)
 			fmt.Fprintln(w, `data: {"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"{\"code\":\"print(6 * 7)\"}"}}`)
 			fmt.Fprintln(w, `data: {"type":"content_block_stop","index":1}`)
-			fmt.Fprintln(w, `data: {"type":"message_delta","usage":{"output_tokens":8}}`)
+			fmt.Fprintln(w, `data: {"type":"message_delta","delta":{"stop_reason":"tool_use"},"usage":{"output_tokens":8}}`)
+			fmt.Fprintln(w, `data: {"type":"message_stop"}`)
 		case 2:
 			encoded, _ := json.Marshal(request.Messages)
 			body := string(encoded)
@@ -56,7 +58,8 @@ func TestAnthropicRespondExecutesToolAndPreservesThinkingSignature(t *testing.T)
 			fmt.Fprintln(w, `data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}`)
 			fmt.Fprintln(w, `data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"The answer is 42."}}`)
 			fmt.Fprintln(w, `data: {"type":"content_block_stop","index":0}`)
-			fmt.Fprintln(w, `data: {"type":"message_delta","usage":{"output_tokens":5}}`)
+			fmt.Fprintln(w, `data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":5}}`)
+			fmt.Fprintln(w, `data: {"type":"message_stop"}`)
 		default:
 			t.Errorf("unexpected request %d", calls.Load())
 		}
@@ -122,5 +125,87 @@ func TestAnthropicAdaptiveThinking(t *testing.T) {
 	}
 	if anthropicAdaptiveThinking("claude-sonnet-4-5-20250929") {
 		t.Fatal("older models should use budget thinking")
+	}
+}
+
+func TestAnthropicRejectsIncompleteStreams(t *testing.T) {
+	toolUse := []string{
+		`data: {"type":"message_start","message":{"usage":{"input_tokens":10}}}`,
+		`data: {"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"tool_1","name":"repl","input":{}}}`,
+		`data: {"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\"code\":\"print("}}`,
+	}
+	thinking := []string{
+		`data: {"type":"message_start","message":{"usage":{"input_tokens":10}}}`,
+		`data: {"type":"content_block_start","index":0,"content_block":{"type":"thinking","thinking":""}}`,
+		`data: {"type":"content_block_delta","index":0,"delta":{"type":"signature_delta","signature":"sig"}}`,
+		`data: {"type":"content_block_stop","index":0}`,
+	}
+	stop := func(reason string) []string {
+		return []string{
+			`data: {"type":"message_delta","delta":{"stop_reason":"` + reason + `"},"usage":{"output_tokens":16384}}`,
+			`data: {"type":"message_stop"}`,
+		}
+	}
+	for _, test := range []struct {
+		name     string
+		frames   []string
+		overflow bool
+	}{
+		{name: "eof mid tool_use", frames: toolUse},
+		{name: "error event", frames: slices.Concat(toolUse, []string{"event: error\ndata: {\"type\":\"error\",\"error\":{\"type\":\"overloaded_error\",\"message\":\"Overloaded\"}}"})},
+		{name: "message_stop without stop_reason", frames: slices.Concat(toolUse, []string{`data: {"type":"message_stop"}`})},
+		{name: "max_tokens mid tool_use", frames: slices.Concat(toolUse, []string{`data: {"type":"content_block_stop","index":0}`}, stop("max_tokens"))},
+		{name: "max_tokens while thinking", frames: slices.Concat(thinking, stop("max_tokens"))},
+		{name: "context window exceeded", frames: slices.Concat(thinking, stop("model_context_window_exceeded")), overflow: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			server := sseServer(t, test.frames...)
+			a := &Agent{provider: "anthropic", baseURL: server.URL, httpClient: server.Client(), modelName: "claude-test"}
+			response, err := a.streamAnthropic(context.Background(), modelRequest{}, func(ToolEvent) {})
+			if err == nil {
+				t.Fatalf("incomplete stream accepted: %+v", response)
+			}
+			if isContextOverflowError(err) != test.overflow || !isRetryableLLMError(err) {
+				t.Fatalf("err = %v: overflow %v, retryable %v", err, isContextOverflowError(err), isRetryableLLMError(err))
+			}
+		})
+	}
+}
+
+func TestAnthropicRetriesTruncatedStream(t *testing.T) {
+	truncated := []string{
+		`data: {"type":"message_start","message":{"usage":{"input_tokens":10}}}`,
+		`data: {"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"tool_1","name":"repl","input":{}}}`,
+	}
+	complete := []string{
+		`data: {"type":"message_start","message":{"usage":{"input_tokens":10}}}`,
+		`data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}`,
+		`data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"done"}}`,
+		`data: {"type":"content_block_stop","index":0}`,
+		`data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":1}}`,
+		`data: {"type":"message_stop"}`,
+	}
+	calls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		frames := complete
+		if calls == 1 {
+			frames = truncated
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprint(w, strings.Join(frames, "\n\n")+"\n\n")
+	}))
+	defer server.Close()
+	a := &Agent{provider: "anthropic", baseURL: server.URL, httpClient: server.Client(), modelName: "claude-test", maxRetries: 1, retryJitter: func() float64 { return 0 }, cwd: t.TempDir()}
+	startTestSession(t, a)
+
+	response := a.Respond("hi", nil, func(ToolEvent) {}, context.Background())
+	if response.Err != nil || response.Text != "done" || calls != 2 {
+		t.Fatalf("response = %+v, calls = %d", response, calls)
+	}
+	for _, item := range a.history {
+		if item.Type == "tool_call" {
+			t.Fatalf("history kept the truncated tool call: %+v", item)
+		}
 	}
 }

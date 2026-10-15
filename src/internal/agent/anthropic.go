@@ -56,6 +56,7 @@ type anthropicEvent struct {
 		Thinking    string `json:"thinking,omitempty"`
 		Signature   string `json:"signature,omitempty"`
 		PartialJSON string `json:"partial_json,omitempty"`
+		StopReason  string `json:"stop_reason,omitempty"`
 	} `json:"delta,omitempty"`
 	Usage anthropicUsage `json:"usage,omitempty"`
 	Error *struct {
@@ -221,6 +222,8 @@ func (a *Agent) streamAnthropic(ctx context.Context, request modelRequest, emit 
 
 	var result modelResponse
 	var inputUsage anthropicUsage
+	var stopReason string
+	var stopped bool
 	blocks := map[int]int{}
 	toolArguments := map[int]string{}
 	scanner := bufio.NewScanner(response.Body)
@@ -290,12 +293,24 @@ func (a *Agent) streamAnthropic(ctx context.Context, request modelRequest, emit 
 				result.ToolCalls = append(result.ToolCalls, result.Items[itemIndex])
 			}
 		case "message_delta":
+			stopReason = event.Delta.StopReason
 			input := inputUsage.InputTokens + inputUsage.CacheCreationInputTokens + inputUsage.CacheReadInputTokens
 			result.Usage = Usage{InputTokens: input, CachedInputTokens: inputUsage.CacheReadInputTokens, OutputTokens: event.Usage.OutputTokens, TotalTokens: input + event.Usage.OutputTokens}
+		case "message_stop":
+			stopped = true
 		}
 	}
 	if err := scanner.Err(); err != nil {
 		return modelResponse{}, err
+	}
+	// Gateways can close a truncated Bedrock stream with a synthetic message_stop, so require a stop_reason too.
+	switch {
+	case !stopped || stopReason == "":
+		return modelResponse{}, fmt.Errorf("anthropic stream ended before the response completed")
+	case stopReason == "max_tokens":
+		return modelResponse{}, fmt.Errorf("anthropic response hit the max_tokens limit (%d) before completing", maxTokens)
+	case stopReason == "model_context_window_exceeded":
+		return modelResponse{}, fmt.Errorf("anthropic response stopped: model context window exceeded")
 	}
 	if len(result.Items) == 0 {
 		return modelResponse{}, fmt.Errorf("stream ended without a completed response")

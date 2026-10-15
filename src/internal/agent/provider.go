@@ -187,7 +187,8 @@ func (e *geminiAPIError) Error() string { return e.Message }
 
 type geminiChunk struct {
 	Candidates []struct {
-		Content geminiContent `json:"content"`
+		Content      geminiContent `json:"content"`
+		FinishReason string        `json:"finishReason"`
 	} `json:"candidates"`
 	Usage struct {
 		Prompt     int64 `json:"promptTokenCount"`
@@ -311,6 +312,7 @@ func (a *Agent) streamGemini(ctx context.Context, request modelRequest, emit fun
 		return modelResponse{}, &geminiAPIError{StatusCode: response.StatusCode, Message: fmt.Sprintf("gemini API %s: %s", response.Status, strings.TrimSpace(string(body)))}
 	}
 	var result modelResponse
+	var finishReason string
 	scanner := bufio.NewScanner(response.Body)
 	scanner.Buffer(make([]byte, 64*1024), 4*1024*1024)
 	for scanner.Scan() {
@@ -329,6 +331,9 @@ func (a *Agent) streamGemini(ctx context.Context, request modelRequest, emit fun
 			result.Usage = Usage{InputTokens: chunk.Usage.Prompt, CachedInputTokens: chunk.Usage.Cached, OutputTokens: chunk.Usage.Candidates, ReasoningOutputTokens: chunk.Usage.Thoughts, TotalTokens: chunk.Usage.Total}
 		}
 		for _, candidate := range chunk.Candidates {
+			if candidate.FinishReason != "" {
+				finishReason = candidate.FinishReason
+			}
 			for _, part := range candidate.Content.Parts {
 				if part.FunctionCall != nil {
 					id := part.FunctionCall.ID
@@ -363,6 +368,12 @@ func (a *Agent) streamGemini(ctx context.Context, request modelRequest, emit fun
 	}
 	if err := scanner.Err(); err != nil {
 		return modelResponse{}, err
+	}
+	switch finishReason {
+	case "":
+		return modelResponse{}, fmt.Errorf("gemini stream ended before the response completed")
+	case "MAX_TOKENS":
+		return modelResponse{}, fmt.Errorf("gemini response hit the max output tokens limit before completing")
 	}
 	if len(result.Items) == 0 {
 		return modelResponse{}, fmt.Errorf("stream ended without a completed response")

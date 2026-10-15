@@ -47,7 +47,7 @@ func TestGeminiRespondExecutesToolAndPreservesThoughtSignature(t *testing.T) {
 			if len(request.Tools) != 1 || request.SystemInstruction == nil {
 				t.Errorf("first request = %#v", request)
 			}
-			fmt.Fprintln(w, `data: {"candidates":[{"content":{"role":"model","parts":[{"functionCall":{"name":"repl","args":{"code":"print(6 * 7)"},"id":"call_1"},"thoughtSignature":"signature-1"}]}}],"usageMetadata":{"promptTokenCount":10,"candidatesTokenCount":2,"thoughtsTokenCount":3,"totalTokenCount":15}}`)
+			fmt.Fprintln(w, `data: {"candidates":[{"content":{"role":"model","parts":[{"functionCall":{"name":"repl","args":{"code":"print(6 * 7)"},"id":"call_1"},"thoughtSignature":"signature-1"}]},"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":10,"candidatesTokenCount":2,"thoughtsTokenCount":3,"totalTokenCount":15}}`)
 		case 2:
 			encoded, _ := json.Marshal(request)
 			body := string(encoded)
@@ -57,7 +57,7 @@ func TestGeminiRespondExecutesToolAndPreservesThoughtSignature(t *testing.T) {
 			if !strings.Contains(body, `"functionResponse":{"name":"repl","response":{"output":"42\n"},"id":"call_1"}`) {
 				t.Errorf("second request omitted tool result: %s", body)
 			}
-			fmt.Fprintln(w, `data: {"candidates":[{"content":{"role":"model","parts":[{"text":"The answer is 42."}]}}],"usageMetadata":{"promptTokenCount":20,"candidatesTokenCount":5,"thoughtsTokenCount":1,"totalTokenCount":26}}`)
+			fmt.Fprintln(w, `data: {"candidates":[{"content":{"role":"model","parts":[{"text":"The answer is 42."}]},"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":20,"candidatesTokenCount":5,"thoughtsTokenCount":1,"totalTokenCount":26}}`)
 		default:
 			t.Errorf("unexpected request %d", calls.Load())
 		}
@@ -92,7 +92,7 @@ func TestGeminiRespondExecutesToolAndPreservesThoughtSignature(t *testing.T) {
 
 func TestGeminiPreservesSignedEmptyParts(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprintln(w, `data: {"candidates":[{"content":{"role":"model","parts":[{"thought":true,"thoughtSignature":"first"},{"thought":true,"thoughtSignature":"second"}]}}]}`)
+		fmt.Fprintln(w, `data: {"candidates":[{"content":{"role":"model","parts":[{"thought":true,"thoughtSignature":"first"},{"thought":true,"thoughtSignature":"second"}]},"finishReason":"STOP"}]}`)
 	}))
 	defer server.Close()
 
@@ -123,7 +123,7 @@ func TestGeminiCancellationDoesNotLeaveModelTurn(t *testing.T) {
 		}
 		requests = append(requests, request)
 		w.Header().Set("Content-Type", "text/event-stream")
-		fmt.Fprintln(w, `data: {"candidates":[{"content":{"role":"model","parts":[{"text":"answer"}]}}],"usageMetadata":{"promptTokenCount":1,"candidatesTokenCount":1,"totalTokenCount":2}}`)
+		fmt.Fprintln(w, `data: {"candidates":[{"content":{"role":"model","parts":[{"text":"answer"}]},"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":1,"candidatesTokenCount":1,"totalTokenCount":2}}`)
 	}))
 	defer server.Close()
 
@@ -178,7 +178,7 @@ func TestGeminiGatewayUsesBearerHeadersAndOmitsToolCallIDs(t *testing.T) {
 		if strings.Contains(body, `"id":"call_1"`) {
 			t.Errorf("gateway request contains tool call ID: %s", body)
 		}
-		fmt.Fprintln(w, `data: {"candidates":[{"content":{"role":"model","parts":[{"text":"done"}]}}],"usageMetadata":{"promptTokenCount":1,"candidatesTokenCount":1,"totalTokenCount":2}}`)
+		fmt.Fprintln(w, `data: {"candidates":[{"content":{"role":"model","parts":[{"text":"done"}]},"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":1,"candidatesTokenCount":1,"totalTokenCount":2}}`)
 	}))
 	defer server.Close()
 
@@ -206,9 +206,9 @@ func TestGeminiCancellationPreservesCompletedToolTurn(t *testing.T) {
 		requests = append(requests, request)
 		w.Header().Set("Content-Type", "text/event-stream")
 		if len(requests) == 1 {
-			fmt.Fprintln(w, `data: {"candidates":[{"content":{"role":"model","parts":[{"functionCall":{"name":"repl","args":{"code":"import time\ntime.sleep(1)"}}}]}}],"usageMetadata":{"promptTokenCount":1,"candidatesTokenCount":1,"totalTokenCount":2}}`)
+			fmt.Fprintln(w, `data: {"candidates":[{"content":{"role":"model","parts":[{"functionCall":{"name":"repl","args":{"code":"import time\ntime.sleep(1)"}}}]},"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":1,"candidatesTokenCount":1,"totalTokenCount":2}}`)
 		} else {
-			fmt.Fprintln(w, `data: {"candidates":[{"content":{"role":"model","parts":[{"text":"answer"}]}}],"usageMetadata":{"promptTokenCount":1,"candidatesTokenCount":1,"totalTokenCount":2}}`)
+			fmt.Fprintln(w, `data: {"candidates":[{"content":{"role":"model","parts":[{"text":"answer"}]},"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":1,"candidatesTokenCount":1,"totalTokenCount":2}}`)
 		}
 	}))
 	defer server.Close()
@@ -248,10 +248,10 @@ func TestRespondStreamsExactlyTheLimitedToolOutput(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
 		if calls.Add(1) == 1 {
-			fmt.Fprintln(w, `data: {"candidates":[{"content":{"role":"model","parts":[{"functionCall":{"name":"repl","args":{"code":"for _ in range(2000): print('x' * 99)"},"id":"call_1"}}]}}]}`)
+			fmt.Fprintln(w, `data: {"candidates":[{"content":{"role":"model","parts":[{"functionCall":{"name":"repl","args":{"code":"for _ in range(2000): print('x' * 99)"},"id":"call_1"}}]},"finishReason":"STOP"}]}`)
 			return
 		}
-		fmt.Fprintln(w, `data: {"candidates":[{"content":{"role":"model","parts":[{"text":"done"}]}}]}`)
+		fmt.Fprintln(w, `data: {"candidates":[{"content":{"role":"model","parts":[{"text":"done"}]},"finishReason":"STOP"}]}`)
 	}))
 	defer server.Close()
 
@@ -273,5 +273,22 @@ func TestRespondStreamsExactlyTheLimitedToolOutput(t *testing.T) {
 	want := limitToolOutput(strings.Repeat(strings.Repeat("x", 99)+"\n", 2000))
 	if result != want || !strings.HasPrefix(result, streamed.String()+"\n[output truncated") {
 		t.Fatalf("streamed %d bytes, result %d bytes", streamed.Len(), len(result))
+	}
+}
+
+func TestGeminiRejectsIncompleteStreams(t *testing.T) {
+	thought := `{"content":{"role":"model","parts":[{"text":"Planning the call.","thought":true}]}`
+	for name, frames := range map[string][]string{
+		"eof before finishReason": {`data: {"candidates":[` + thought + `}]}`},
+		"max tokens":              {`data: {"candidates":[` + thought + `,"finishReason":"MAX_TOKENS"}]}`},
+	} {
+		t.Run(name, func(t *testing.T) {
+			server := sseServer(t, frames...)
+			a := &Agent{provider: "gemini", baseURL: server.URL, httpClient: server.Client(), modelName: "gemini-3.7-flash"}
+			response, err := a.streamGemini(context.Background(), modelRequest{}, func(ToolEvent) {})
+			if err == nil || !isRetryableLLMError(err) {
+				t.Fatalf("response = %+v, err = %v", response, err)
+			}
+		})
 	}
 }

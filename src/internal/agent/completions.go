@@ -45,7 +45,8 @@ type completionRequest struct {
 
 type completionChunk struct {
 	Choices []struct {
-		Delta completionMessage `json:"delta"`
+		Delta        completionMessage `json:"delta"`
+		FinishReason string            `json:"finish_reason"`
 	} `json:"choices"`
 	Usage *struct {
 		PromptTokens        int64 `json:"prompt_tokens"`
@@ -151,6 +152,7 @@ func (a *Agent) streamCompletions(ctx context.Context, request modelRequest, emi
 	}
 
 	var result modelResponse
+	var finishReason string
 	toolCalls := map[int]int{}
 	scanner := bufio.NewScanner(response.Body)
 	scanner.Buffer(make([]byte, 64*1024), 4*1024*1024)
@@ -170,6 +172,9 @@ func (a *Agent) streamCompletions(ctx context.Context, request modelRequest, emi
 			result.Usage = Usage{InputTokens: chunk.Usage.PromptTokens, CachedInputTokens: chunk.Usage.PromptTokensDetails.CachedTokens, OutputTokens: chunk.Usage.CompletionTokens, ReasoningOutputTokens: chunk.Usage.CompletionTokensDetails.ReasoningTokens, TotalTokens: chunk.Usage.TotalTokens}
 		}
 		for _, choice := range chunk.Choices {
+			if choice.FinishReason != "" {
+				finishReason = choice.FinishReason
+			}
 			delta := choice.Delta
 			if delta.ReasoningContent != "" {
 				result.Items = appendCompletionItem(result.Items, historyItem{Type: "reasoning", Text: delta.ReasoningContent, Provider: "openai-completions", Model: a.modelName})
@@ -195,6 +200,12 @@ func (a *Agent) streamCompletions(ctx context.Context, request modelRequest, emi
 	}
 	if err := scanner.Err(); err != nil {
 		return modelResponse{}, err
+	}
+	switch finishReason {
+	case "":
+		return modelResponse{}, fmt.Errorf("completions stream ended before the response completed")
+	case "length":
+		return modelResponse{}, fmt.Errorf("completions response hit the max_tokens limit before completing")
 	}
 	for _, item := range result.Items {
 		if item.Type == "tool_call" {

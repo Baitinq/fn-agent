@@ -33,7 +33,7 @@ func TestCompletionsRespondExecutesToolAndPreservesReasoning(t *testing.T) {
 			}
 			fmt.Fprintln(w, `data: {"choices":[{"delta":{"reasoning_content":"I should calculate."}}]}`)
 			fmt.Fprintln(w, `data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"repl","arguments":"{\"code\":"}}]}}]}`)
-			fmt.Fprintln(w, `data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"\"print(6 * 7)\"}"}}]}}],"usage":{"prompt_tokens":10,"completion_tokens":8,"total_tokens":18,"completion_tokens_details":{"reasoning_tokens":3}}}`)
+			fmt.Fprintln(w, `data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"\"print(6 * 7)\"}"}}]},"finish_reason":"tool_calls"}],"usage":{"prompt_tokens":10,"completion_tokens":8,"total_tokens":18,"completion_tokens_details":{"reasoning_tokens":3}}}`)
 			fmt.Fprintln(w, "data: [DONE]")
 		case 2:
 			encoded, _ := json.Marshal(request.Messages)
@@ -44,7 +44,7 @@ func TestCompletionsRespondExecutesToolAndPreservesReasoning(t *testing.T) {
 				}
 			}
 			fmt.Fprintln(w, `data: {"choices":[{"delta":{"content":"The answer is "}}]}`)
-			fmt.Fprintln(w, `data: {"choices":[{"delta":{"content":"42."}}],"usage":{"prompt_tokens":20,"completion_tokens":5,"total_tokens":25}}`)
+			fmt.Fprintln(w, `data: {"choices":[{"delta":{"content":"42."},"finish_reason":"stop"}],"usage":{"prompt_tokens":20,"completion_tokens":5,"total_tokens":25}}`)
 			fmt.Fprintln(w, "data: [DONE]")
 		default:
 			t.Errorf("unexpected request %d", calls.Load())
@@ -78,5 +78,22 @@ func TestCompletionMessagesDoNotReuseOtherProviderReasoning(t *testing.T) {
 	body := string(encoded)
 	if strings.Contains(body, "private") || !strings.Contains(body, `"tool_calls"`) || !strings.Contains(body, `"role":"tool"`) {
 		t.Fatalf("messages = %s", body)
+	}
+}
+
+func TestCompletionsRejectsIncompleteStreams(t *testing.T) {
+	toolCall := `data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"repl","arguments":"{\"code\":\"print("}}]}}]}`
+	for name, frames := range map[string][]string{
+		"eof mid tool call":    {toolCall},
+		"length mid tool call": {toolCall, `data: {"choices":[{"delta":{},"finish_reason":"length"}]}`, `data: [DONE]`},
+	} {
+		t.Run(name, func(t *testing.T) {
+			server := sseServer(t, frames...)
+			a := &Agent{provider: "openai-completions", baseURL: server.URL, httpClient: server.Client(), modelName: "local-model"}
+			response, err := a.streamCompletions(context.Background(), modelRequest{}, func(ToolEvent) {})
+			if err == nil || !isRetryableLLMError(err) {
+				t.Fatalf("response = %+v, err = %v", response, err)
+			}
+		})
 	}
 }
