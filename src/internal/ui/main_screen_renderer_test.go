@@ -208,3 +208,22 @@ func TestMainScreenRendererShrinksOversizedInput(t *testing.T) {
 		})
 	}
 }
+
+func TestMainScreenRendererRepaintsOnlyChangedLiveLines(t *testing.T) {
+	var out bytes.Buffer
+	r := newMainScreenRenderer(&out, 80, 10)
+	lines := []string{"history", "tool output 1", "tool output 2", "> "}
+	if err := r.renderWithLiveStart(lines, 3, 2, 1); err != nil {
+		t.Fatal(err)
+	}
+
+	out.Reset()
+	lines = []string{"history", "tool output 1", "tool output 2", "> a"}
+	if err := r.renderWithLiveStart(lines, 3, 3, 1); err != nil {
+		t.Fatal(err)
+	}
+
+	if output := out.String(); strings.Contains(output, "tool output") || !strings.Contains(output, "> a") {
+		t.Fatalf("keystroke repainted unchanged live lines: %q", output)
+	}
+}

@@ -46,7 +46,7 @@ func (r *mainScreenRenderer) renderSized(lines []string, cursorRow, cursorCol, l
 
 	resized := r.forceReplay || width != r.width || height != r.height
 	firstChanged := r.firstChangedLine(lines)
-	if firstChanged >= 0 {
+	if firstChanged >= 0 && len(lines) != len(r.previousLines) {
 		firstChanged = min(firstChanged, r.previousLiveStart)
 	}
 	lastChanged := r.lastChangedLine(lines)
