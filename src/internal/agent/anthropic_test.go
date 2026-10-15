@@ -209,3 +209,31 @@ func TestAnthropicRetriesTruncatedStream(t *testing.T) {
 		}
 	}
 }
+
+func TestAnthropicCallLLMOmitsEmptySystem(t *testing.T) {
+	t.Setenv("ANTHROPIC_API_KEY", "test-key")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var request map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Error(err)
+		}
+		if system, ok := request["system"]; ok {
+			t.Errorf("system = %v", system)
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprintln(w, `data: {"type":"message_start","message":{"usage":{"input_tokens":3}}}`)
+		fmt.Fprintln(w, `data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}`)
+		fmt.Fprintln(w, `data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"ok"}}`)
+		fmt.Fprintln(w, `data: {"type":"content_block_stop","index":0}`)
+		fmt.Fprintln(w, `data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":1}}`)
+		fmt.Fprintln(w, `data: {"type":"message_stop"}`)
+	}))
+	defer server.Close()
+
+	a := &Agent{provider: "anthropic", baseURL: server.URL, httpClient: server.Client(), modelName: "claude-test", reasoningEffort: "high", instructions: "Use the tool.", maxRetries: 0, cwd: t.TempDir()}
+	startTestSession(t, a)
+	text, err := a.callLLM(context.Background(), "say ok")
+	if err != nil || text != "ok" {
+		t.Fatalf("callLLM = %q, %v", text, err)
+	}
+}

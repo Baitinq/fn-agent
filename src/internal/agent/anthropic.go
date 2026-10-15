@@ -174,8 +174,10 @@ func (a *Agent) streamAnthropic(ctx context.Context, request modelRequest, emit 
 	ephemeral := map[string]string{"type": "ephemeral"}
 	payload := anthropicRequest{
 		Model: a.modelName, MaxTokens: maxTokens,
-		System:   []anthropicContent{{Type: "text", Text: request.Instructions, CacheControl: ephemeral}},
 		Messages: anthropicMessages(request.History, a.modelName), Stream: true,
+	}
+	if request.Instructions != "" {
+		payload.System = []anthropicContent{{Type: "text", Text: request.Instructions, CacheControl: ephemeral}}
 	}
 	// Tool results are pruned after each call, so only blocks before the latest user message stay byte-identical in the next request.
 	if n := len(payload.Messages); n >= 2 {
