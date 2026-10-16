@@ -253,6 +253,7 @@ func (a *Agent) Usage() []Usage {
 }
 
 type Agent struct {
+	cacheWarmer     cacheWarmer
 	cwd             string
 	sessionID       string
 	sessionDir      string
@@ -646,7 +647,9 @@ func (a *Agent) Respond(msg string, steer <-chan string, emit func(ToolEvent), c
 	var text string
 	var contextTokens int64
 	overflowRecoveryAttempted := false
+	defer a.stopCacheWarming()
 	for {
+		a.stopCacheWarming()
 		request := modelRequest{Instructions: a.instructions, History: a.input(), Tools: true, ReasoningEffort: string(a.reasoningEffort)}
 		var resp modelResponse
 		for attempt := 0; ; attempt++ {
@@ -727,6 +730,7 @@ func (a *Agent) Respond(msg string, steer <-chan string, emit func(ToolEvent), c
 			}
 		}
 		emit(ToolEvent{Kind: ToolEventReasoningDone})
+		a.startCacheWarming()
 		for _, call := range resp.ToolCalls {
 			output := ""
 			failed := false

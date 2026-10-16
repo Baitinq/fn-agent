@@ -71,6 +71,11 @@ type anthropicUsage struct {
 	OutputTokens             int64 `json:"output_tokens"`
 }
 
+func (u anthropicUsage) usage() Usage {
+	input := u.InputTokens + u.CacheCreationInputTokens + u.CacheReadInputTokens
+	return Usage{InputTokens: input, CachedInputTokens: u.CacheReadInputTokens, OutputTokens: u.OutputTokens, TotalTokens: input + u.OutputTokens}
+}
+
 type anthropicAPIError struct {
 	StatusCode int
 	Message    string
@@ -198,18 +203,11 @@ func (a *Agent) streamAnthropic(ctx context.Context, request modelRequest, emit 
 			},
 		}}
 	}
+	if request.Tools && anthropicAdaptiveThinking(a.modelName) {
+		a.rememberCacheWarmRequest(payload)
+	}
 	data, _ := json.Marshal(payload)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(a.baseURL, "/")+"/v1/messages", bytes.NewReader(data))
-	if err != nil {
-		return modelResponse{}, err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("x-api-key", os.Getenv("ANTHROPIC_API_KEY"))
-	req.Header.Set("anthropic-version", "2023-06-01")
-	if !anthropicAdaptiveThinking(a.modelName) {
-		req.Header.Set("anthropic-beta", "interleaved-thinking-2025-05-14")
-	}
-	response, err := a.httpClient.Do(req)
+	response, err := a.postAnthropic(ctx, data)
 	if err != nil {
 		return modelResponse{}, err
 	}
@@ -290,8 +288,8 @@ func (a *Agent) streamAnthropic(ctx context.Context, request modelRequest, emit 
 				result.ToolCalls = append(result.ToolCalls, result.Items[itemIndex])
 			}
 		case "message_delta":
-			input := inputUsage.InputTokens + inputUsage.CacheCreationInputTokens + inputUsage.CacheReadInputTokens
-			result.Usage = Usage{InputTokens: input, CachedInputTokens: inputUsage.CacheReadInputTokens, OutputTokens: event.Usage.OutputTokens, TotalTokens: input + event.Usage.OutputTokens}
+			inputUsage.OutputTokens = event.Usage.OutputTokens
+			result.Usage = inputUsage.usage()
 		}
 	}
 	if err := scanner.Err(); err != nil {
@@ -302,4 +300,18 @@ func (a *Agent) streamAnthropic(ctx context.Context, request modelRequest, emit 
 	}
 	a.recordUsage(result.Usage, emit)
 	return result, nil
+}
+
+func (a *Agent) postAnthropic(ctx context.Context, data []byte) (*http.Response, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(a.baseURL, "/")+"/v1/messages", bytes.NewReader(data))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("x-api-key", os.Getenv("ANTHROPIC_API_KEY"))
+	req.Header.Set("anthropic-version", "2023-06-01")
+	if !anthropicAdaptiveThinking(a.modelName) {
+		req.Header.Set("anthropic-beta", "interleaved-thinking-2025-05-14")
+	}
+	return a.httpClient.Do(req)
 }
