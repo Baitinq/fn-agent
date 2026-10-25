@@ -763,7 +763,7 @@ func TestPiBoxLineRestoresBackgroundAfterNestedStyle(t *testing.T) {
 
 func TestToolCardClarifiesContextOmission(t *testing.T) {
 	got := stripANSI(renderedMessage(message{role: "tool", toolName: "repl", toolCommand: "print(1)", toolResult: agent.OmittedToolResult, toolState: "success"}, 60))
-	if !strings.Contains(got, "[tool output omitted after use]") {
+	if !strings.Contains(got, "[tool output omitted after use; REPL state persists]") {
 		t.Fatalf("tool card omission = %q", got)
 	}
 }

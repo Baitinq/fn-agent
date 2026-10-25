@@ -560,7 +560,7 @@ func (a *Agent) streamResponse(ctx context.Context, params responses.ResponseNew
 	return resp, nil
 }
 
-const OmittedToolResult = "[tool output omitted after use]"
+const OmittedToolResult = "[tool output omitted after use; REPL state persists]"
 
 const maxToolOutputBytes = 50 * 1024
 
